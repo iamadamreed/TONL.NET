@@ -37,21 +37,29 @@ jobs:
       - name: Calculate version
         id: version
         run: |
-          # Get MinVer calculated version
+          # Get MinVer calculated version and height
           MINVER_VERSION=$(dotnet msbuild src/TONL.Core/TONL.Core.csproj -getProperty:Version -nologo)
-          echo "MinVer version: $MINVER_VERSION"
+          MINVER_HEIGHT=$(dotnet msbuild src/TONL.Core/TONL.Core.csproj -getProperty:MinVerHeight -nologo)
+          echo "MinVer version: $MINVER_VERSION (height: $MINVER_HEIGHT)"
 
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             # On main: strip pre-release suffix for stable release
-            STABLE_VERSION=$(echo "$MINVER_VERSION" | sed 's/-alpha\.[0-9]*$//' | sed 's/-beta\.[0-9]*$//' | sed 's/-rc\.[0-9]*$//')
+            STABLE_VERSION=$(echo "$MINVER_VERSION" | sed 's/-alpha\.[0-9.]*$//' | sed 's/-beta\.[0-9.]*$//' | sed 's/-rc\.[0-9.]*$//')
             echo "VERSION=$STABLE_VERSION" >> $GITHUB_OUTPUT
             echo "IS_STABLE=true" >> $GITHUB_OUTPUT
             echo "Stable version: $STABLE_VERSION"
           else
-            # On alpha: use MinVer version as-is
-            echo "VERSION=$MINVER_VERSION" >> $GITHUB_OUTPUT
+            # On alpha: ensure version has -alpha suffix
+            if [[ "$MINVER_VERSION" == *"-alpha"* ]] || [[ "$MINVER_VERSION" == *"-beta"* ]] || [[ "$MINVER_VERSION" == *"-rc"* ]]; then
+              # Already has pre-release suffix
+              FINAL_VERSION="$MINVER_VERSION"
+            else
+              # Add -alpha.{height} suffix for alpha branch
+              FINAL_VERSION="${MINVER_VERSION}-alpha.${MINVER_HEIGHT}"
+            fi
+            echo "VERSION=$FINAL_VERSION" >> $GITHUB_OUTPUT
             echo "IS_STABLE=false" >> $GITHUB_OUTPUT
-            echo "Alpha version: $MINVER_VERSION"
+            echo "Alpha version: $FINAL_VERSION"
           fi
 
       - name: Pack
@@ -65,8 +73,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           TAG="v${{ steps.version.outputs.VERSION }}"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping"
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "Created and pushed tag $TAG"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
