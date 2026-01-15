@@ -1,0 +1,3 @@
+[submodule "docs/tonl-spec"]
+	path = docs/tonl-spec
+	url = https://github.com/tonl-dev/tonl.git
