@@ -14,7 +14,7 @@ A high-performance .NET implementation of [TONL (Token-Optimized Notation Langua
 ## Installation
 
 ```bash
-dotnet add package Tonl.Core
+dotnet add package TONL.Core
 ```
 
 ## Quick Start
@@ -22,7 +22,7 @@ dotnet add package Tonl.Core
 ### Basic Serialization
 
 ```csharp
-using Tonl;
+using TONL;
 
 // Serialize an object to TONL
 var user = new User { Name = "Alice", Age = 30 };
@@ -108,10 +108,10 @@ TONL excels at compression while maintaining competitive speed. The format is id
 
 ## Project Structure
 
-- **Tonl.Core** - Core serialization library
-- **Tonl.SourceGenerator** - Roslyn-based source generator for compile-time serialization
-- **Tonl.Tests** - Test suite with 263 spec compliance tests
-- **Tonl.Benchmarks** - BenchmarkDotNet performance tests
+- **TONL.Core** - Core serialization library
+- **TONL.SourceGenerator** - Roslyn-based source generator for compile-time serialization
+- **TONL.Tests** - Test suite with 263 spec compliance tests
+- **TONL.Benchmarks** - BenchmarkDotNet performance tests
 
 ## Building
 
@@ -123,7 +123,7 @@ dotnet build
 dotnet test
 
 # Run benchmarks
-dotnet run --project benchmarks/Tonl.Benchmarks -c Release
+dotnet run --project benchmarks/TONL.Benchmarks -c Release
 ```
 
 ## Acknowledgments

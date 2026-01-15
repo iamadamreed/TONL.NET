@@ -251,18 +251,18 @@ public interface ITonlSerializer
 ### Project Structure
 
 ```
-Tonl.NET/
+TONL.NET/
 ├── src/
-│   ├── Tonl.Core/                 # Core serializer
+│   ├── TONL.Core/                 # Core serializer
 │   │   ├── TonlReader.cs          # ref struct reader
 │   │   ├── TonlWriter.cs          # ref struct writer
 │   │   ├── TonlSerializer.cs      # Public API
 │   │   └── TonlBufferWriter.cs    # ArrayPool-backed buffer
-│   └── Tonl.SourceGenerator/      # Roslyn source generator
+│   └── TONL.SourceGenerator/      # Roslyn source generator
 ├── tests/
-│   └── Tonl.Tests/                # Unit tests
+│   └── TONL.Tests/                # Unit tests
 └── benchmarks/
-    └── Tonl.Benchmarks/           # BenchmarkDotNet tests
+    └── TONL.Benchmarks/           # BenchmarkDotNet tests
 ```
 
 ---
@@ -438,7 +438,7 @@ public class TonlSourceGenerator : IIncrementalGenerator
     {
         var types = context.SyntaxProvider
             .ForAttributeWithMetadataName(
-                "Tonl.TonlSerializableAttribute",
+                "TONL.TonlSerializableAttribute",
                 predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
                 transform: static (ctx, _) => GetTypeInfo(ctx))
             .Where(static t => t is not null);
@@ -478,7 +478,7 @@ public class TonlSourceGenerator : IIncrementalGenerator
             }
             """;
 
-        ctx.AddSource($"{typeInfo.Name}.Tonl.g.cs", code);
+        ctx.AddSource($"{typeInfo.Name}.TONL.g.cs", code);
     }
 }
 ```

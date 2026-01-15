@@ -1,4 +1,4 @@
-# Plan: Scaffold Tonl.NET Project
+# Plan: Scaffold TONL.NET Project
 
 ## Overview
 Create a new .NET solution for a high-performance TONL (Token-Optimized Notation Language) serializer library with source generators.
@@ -6,13 +6,13 @@ Create a new .NET solution for a high-performance TONL (Token-Optimized Notation
 ## Project Structure
 
 ```
-~/dev/Tonl.NET/
-├── Tonl.sln
+~/dev/TONL.NET/
+├── TONL.sln
 ├── CLAUDE.md                          # Research findings and implementation plans
 ├── README.md                          # Project documentation
 ├── src/
-│   ├── Tonl.Core/                     # Core serialization library
-│   │   ├── Tonl.Core.csproj
+│   ├── TONL.Core/                     # Core serialization library
+│   │   ├── TONL.Core.csproj
 │   │   ├── TonlSerializer.cs          # Main public API
 │   │   ├── TonlReader.cs              # ref struct reader
 │   │   ├── TonlWriter.cs              # ref struct writer
@@ -21,32 +21,32 @@ Create a new .NET solution for a high-performance TONL (Token-Optimized Notation
 │   │   ├── TonlOptions.cs             # Serialization options
 │   │   └── Attributes/
 │   │       └── TonlSerializableAttribute.cs
-│   └── Tonl.SourceGenerator/          # Roslyn source generator
-│       ├── Tonl.SourceGenerator.csproj
+│   └── TONL.SourceGenerator/          # Roslyn source generator
+│       ├── TONL.SourceGenerator.csproj
 │       └── TonlSourceGenerator.cs
 ├── tests/
-│   └── Tonl.Tests/                    # Unit tests
-│       └── Tonl.Tests.csproj
+│   └── TONL.Tests/                    # Unit tests
+│       └── TONL.Tests.csproj
 └── benchmarks/
-    └── Tonl.Benchmarks/               # BenchmarkDotNet performance tests
-        └── Tonl.Benchmarks.csproj
+    └── TONL.Benchmarks/               # BenchmarkDotNet performance tests
+        └── TONL.Benchmarks.csproj
 ```
 
 ## Implementation Steps
 
 1. **Create solution structure**
    - Create src/, tests/, benchmarks/ directories
-   - Create Tonl.Core class library (.NET 8.0)
-   - Create Tonl.SourceGenerator analyzer library
-   - Create Tonl.Tests xunit project
-   - Create Tonl.Benchmarks console project
+   - Create TONL.Core class library (.NET 8.0)
+   - Create TONL.SourceGenerator analyzer library
+   - Create TONL.Tests xunit project
+   - Create TONL.Benchmarks console project
    - Add all projects to solution
 
 2. **Configure project files**
-   - Tonl.Core: Add CommunityToolkit.HighPerformance reference
-   - Tonl.SourceGenerator: Configure as analyzer with Microsoft.CodeAnalysis.CSharp
-   - Tonl.Tests: Add xunit references
-   - Tonl.Benchmarks: Add BenchmarkDotNet reference
+   - TONL.Core: Add CommunityToolkit.HighPerformance reference
+   - TONL.SourceGenerator: Configure as analyzer with Microsoft.CodeAnalysis.CSharp
+   - TONL.Tests: Add xunit references
+   - TONL.Benchmarks: Add BenchmarkDotNet reference
 
 3. **Create stub files**
    - Create placeholder classes with key interfaces defined
@@ -63,15 +63,15 @@ Create a new .NET solution for a high-performance TONL (Token-Optimized Notation
 - Run `dotnet test` to verify test project is configured
 
 ## Files to Create
-- ~/dev/Tonl.NET/CLAUDE.md
-- ~/dev/Tonl.NET/src/Tonl.Core/Tonl.Core.csproj
-- ~/dev/Tonl.NET/src/Tonl.Core/TonlSerializer.cs
-- ~/dev/Tonl.NET/src/Tonl.Core/TonlReader.cs
-- ~/dev/Tonl.NET/src/Tonl.Core/TonlWriter.cs
-- ~/dev/Tonl.NET/src/Tonl.Core/TonlBufferWriter.cs
-- ~/dev/Tonl.NET/src/Tonl.Core/TonlOptions.cs
-- ~/dev/Tonl.NET/src/Tonl.Core/Attributes/TonlSerializableAttribute.cs
-- ~/dev/Tonl.NET/src/Tonl.SourceGenerator/Tonl.SourceGenerator.csproj
-- ~/dev/Tonl.NET/src/Tonl.SourceGenerator/TonlSourceGenerator.cs
-- ~/dev/Tonl.NET/tests/Tonl.Tests/Tonl.Tests.csproj
-- ~/dev/Tonl.NET/benchmarks/Tonl.Benchmarks/Tonl.Benchmarks.csproj
+- ~/dev/TONL.NET/CLAUDE.md
+- ~/dev/TONL.NET/src/TONL.Core/TONL.Core.csproj
+- ~/dev/TONL.NET/src/TONL.Core/TonlSerializer.cs
+- ~/dev/TONL.NET/src/TONL.Core/TonlReader.cs
+- ~/dev/TONL.NET/src/TONL.Core/TonlWriter.cs
+- ~/dev/TONL.NET/src/TONL.Core/TonlBufferWriter.cs
+- ~/dev/TONL.NET/src/TONL.Core/TonlOptions.cs
+- ~/dev/TONL.NET/src/TONL.Core/Attributes/TonlSerializableAttribute.cs
+- ~/dev/TONL.NET/src/TONL.SourceGenerator/TONL.SourceGenerator.csproj
+- ~/dev/TONL.NET/src/TONL.SourceGenerator/TonlSourceGenerator.cs
+- ~/dev/TONL.NET/tests/TONL.Tests/TONL.Tests.csproj
+- ~/dev/TONL.NET/benchmarks/TONL.Benchmarks/TONL.Benchmarks.csproj

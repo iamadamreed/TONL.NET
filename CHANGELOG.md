@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Tonl.NET will be documented in this file.
+All notable changes to TONL.NET will be documented in this file.
 
 ## [1.0.0-alpha] - 2025-01-15
 
