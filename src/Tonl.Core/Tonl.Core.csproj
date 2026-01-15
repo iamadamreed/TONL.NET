@@ -5,5 +5,11 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Version>1.0.0-alpha</Version>
+    <Authors>Adam Reed</Authors>
+    <Description>High-performance .NET implementation of TONL (Token-Optimized Notation Language)</Description>
+    <PackageTags>serialization;tonl;json-alternative;performance</PackageTags>
+    <RepositoryUrl>https://github.com/iamadamreed/Tonl.NET</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 </Project>

@@ -224,4 +224,101 @@ public class TonlWriterTests
         var result = buffer.ToString();
         Assert.StartsWith("    ", result); // 2 levels * 2 spaces = 4 spaces
     }
+
+    // Quoted Keys Tests
+
+    [Theory]
+    [InlineData("@type", true)] // At symbol
+    [InlineData("field-name", true)] // Hyphen
+    [InlineData("field.name", true)] // Dot
+    [InlineData("key with spaces", true)] // Spaces
+    [InlineData("#comment", true)] // Hash
+    [InlineData("1key", true)] // Starts with digit
+    [InlineData("normalKey", false)] // Normal key
+    [InlineData("_private", false)] // Underscore start
+    public void KeyNeedsQuoting_ReturnsCorrectResult(string key, bool expected)
+    {
+        var result = TonlWriter.KeyNeedsQuoting(key);
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void WriteKey_QuotesSpecialCharacterKeys()
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        writer.WriteKey("@type");
+        writer.Flush();
+
+        var result = buffer.ToString();
+        Assert.Equal("\"@type\"", result);
+    }
+
+    [Fact]
+    public void WriteKey_DoesNotQuoteNormalKeys()
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        writer.WriteKey("normalKey");
+        writer.Flush();
+
+        var result = buffer.ToString();
+        Assert.Equal("normalKey", result);
+    }
+
+    [Fact]
+    public void WriteObjectHeader_QuotesSpecialKeys()
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        writer.WriteObjectHeader("@data", new[] { "field-1", "field-2" });
+        writer.Flush();
+
+        var result = buffer.ToString();
+        Assert.Equal("\"@data\"{\"field-1\",\"field-2\"}:", result);
+    }
+
+    // Indexed Array Tests
+
+    [Fact]
+    public void WriteIndexedArrayHeader_WritesCorrectFormat()
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        writer.WriteIndexedArrayHeader(0);
+        writer.Flush();
+
+        var result = buffer.ToString();
+        Assert.Equal("[0]:", result);
+    }
+
+    [Fact]
+    public void WriteIndexedObjectHeader_WritesCorrectFormat()
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        writer.WriteIndexedObjectHeader(1, new[] { "name", "age" });
+        writer.Flush();
+
+        var result = buffer.ToString();
+        Assert.Equal("[1]{name,age}:", result);
+    }
+
+    [Fact]
+    public void WriteIndexedObjectHeader_QuotesSpecialColumns()
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        writer.WriteIndexedObjectHeader(2, new[] { "@id", "first-name" });
+        writer.Flush();
+
+        var result = buffer.ToString();
+        Assert.Equal("[2]{\"@id\",\"first-name\"}:", result);
+    }
 }

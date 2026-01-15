@@ -158,7 +158,7 @@ public static class TonlSerializer
     {
         var type = value.GetType();
         var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.CanRead)
+            .Where(p => p.CanRead && p.GetIndexParameters().Length == 0) // Exclude indexers
             .OrderBy(p => p.Name, StringComparer.Ordinal)
             .ToArray();
 
@@ -226,8 +226,13 @@ public static class TonlSerializer
             return;
         }
 
+        // Check for uniform dictionary array first (structural equality)
+        if (IsUniformDictionaryArray(items, out var dictColumns))
+        {
+            SerializeTabularDictionaryArray(ref writer, items, key, dictColumns, indent, options);
+        }
         // Check if uniform object array (all objects with same properties)
-        if (IsUniformObjectArray(items, out var columns))
+        else if (IsUniformObjectArray(items, out var columns))
         {
             SerializeTabularArray(ref writer, items, key, columns, indent, options);
         }
@@ -281,6 +286,41 @@ public static class TonlSerializer
         }
     }
 
+    private static void SerializeTabularDictionaryArray(
+        ref TonlWriter writer,
+        List<object?> items,
+        string key,
+        string[] columns,
+        int indent,
+        TonlOptions options)
+    {
+        writer.WriteIndent(indent);
+        writer.WriteArrayHeader(key, items.Count, columns);
+        writer.WriteNewLine();
+
+        foreach (var item in items)
+        {
+            if (item is not IDictionary dict) continue;
+
+            writer.WriteIndent(indent + 1);
+
+            bool first = true;
+            foreach (var col in columns)
+            {
+                if (!first)
+                {
+                    writer.WriteDelimiter();
+                }
+                first = false;
+
+                var val = dict[col];
+                WritePrimitiveValue(ref writer, val, options);
+            }
+
+            writer.WriteNewLine();
+        }
+    }
+
     private static void SerializePrimitiveArray(
         ref TonlWriter writer,
         List<object?> items,
@@ -322,7 +362,123 @@ public static class TonlSerializer
         for (int i = 0; i < items.Count; i++)
         {
             var item = items[i];
-            SerializeValue(ref writer, item, $"[{i}]", indent + 1, options, seen);
+            SerializeIndexedValue(ref writer, item, i, indent + 1, options, seen);
+        }
+    }
+
+    private static void SerializeIndexedValue(
+        ref TonlWriter writer,
+        object? value,
+        int index,
+        int indent,
+        TonlOptions options,
+        HashSet<object> seen)
+    {
+        writer.WriteIndent(indent);
+
+        if (value is null)
+        {
+            writer.WriteIndexedArrayHeader(index);
+            writer.WriteByte((byte)' ');
+            writer.WriteNull();
+            writer.WriteNewLine();
+            return;
+        }
+
+        var type = value.GetType();
+
+        // Check for circular reference
+        if (!type.IsValueType && value is not string)
+        {
+            if (!seen.Add(value))
+            {
+                throw new TonlCircularReferenceException($"[{index}]");
+            }
+        }
+
+        try
+        {
+            if (IsPrimitiveType(type))
+            {
+                writer.WriteIndexedArrayHeader(index);
+                writer.WriteByte((byte)' ');
+                WritePrimitiveValue(ref writer, value, options);
+                writer.WriteNewLine();
+            }
+            else if (value is IDictionary dict)
+            {
+                SerializeIndexedDictionary(ref writer, dict, index, indent, options, seen);
+            }
+            else if (value is IEnumerable enumerable and not string)
+            {
+                // Nested array within mixed array - use indexed format
+                writer.WriteIndexedArrayHeader(index);
+                writer.WriteNewLine();
+                var nestedItems = enumerable.Cast<object?>().ToList();
+                for (int i = 0; i < nestedItems.Count; i++)
+                {
+                    SerializeIndexedValue(ref writer, nestedItems[i], i, indent + 1, options, seen);
+                }
+            }
+            else
+            {
+                SerializeIndexedObject(ref writer, value, index, indent, options, seen);
+            }
+        }
+        finally
+        {
+            if (!type.IsValueType && value is not string)
+            {
+                seen.Remove(value);
+            }
+        }
+    }
+
+    private static void SerializeIndexedObject(
+        ref TonlWriter writer,
+        object value,
+        int index,
+        int indent,
+        TonlOptions options,
+        HashSet<object> seen)
+    {
+        var type = value.GetType();
+        var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanRead && p.GetIndexParameters().Length == 0) // Exclude indexers
+            .OrderBy(p => p.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        var columns = properties.Select(p => p.Name).ToArray();
+
+        writer.WriteIndexedObjectHeader(index, columns);
+        writer.WriteNewLine();
+
+        foreach (var prop in properties)
+        {
+            var propValue = prop.GetValue(value);
+            SerializeValue(ref writer, propValue, prop.Name, indent + 1, options, seen);
+        }
+    }
+
+    private static void SerializeIndexedDictionary(
+        ref TonlWriter writer,
+        IDictionary dict,
+        int index,
+        int indent,
+        TonlOptions options,
+        HashSet<object> seen)
+    {
+        var keys = dict.Keys.Cast<object>().Select(k => k?.ToString() ?? "")
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToArray();
+
+        writer.WriteIndexedObjectHeader(index, keys);
+        writer.WriteNewLine();
+
+        foreach (var k in keys)
+        {
+            var val = dict[k];
+            SerializeValue(ref writer, val, k, indent + 1, options, seen);
         }
     }
 
@@ -455,6 +611,54 @@ public static class TonlSerializer
         return true;
     }
 
+    private static bool IsUniformDictionaryArray(List<object?> items, out string[] columns)
+    {
+        columns = Array.Empty<string>();
+
+        // Filter out nulls
+        var nonNullItems = items.Where(i => i is not null).ToList();
+        if (nonNullItems.Count == 0) return false;
+
+        // All items must be dictionaries
+        if (nonNullItems[0] is not IDictionary firstDict) return false;
+        if (!nonNullItems.All(i => i is IDictionary)) return false;
+
+        // Get keys from first dictionary (sorted for consistent ordering)
+        var firstKeys = firstDict.Keys.Cast<object>()
+            .Select(k => k?.ToString() ?? "")
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToArray();
+
+        if (firstKeys.Length == 0) return false;
+
+        // All dictionaries must have the same keys (structural equality)
+        foreach (var item in nonNullItems.Skip(1))
+        {
+            var dict = (IDictionary)item!;
+            var keys = dict.Keys.Cast<object>()
+                .Select(k => k?.ToString() ?? "")
+                .OrderBy(k => k, StringComparer.Ordinal)
+                .ToArray();
+
+            if (!keys.SequenceEqual(firstKeys)) return false;
+        }
+
+        // All values must be primitives
+        foreach (var item in nonNullItems)
+        {
+            var dict = (IDictionary)item!;
+            foreach (var key in firstKeys)
+            {
+                var val = dict[key];
+                if (val is not null && !IsPrimitiveType(val.GetType()) && val is not string)
+                    return false;
+            }
+        }
+
+        columns = firstKeys;
+        return true;
+    }
+
     private static object? DeserializeDocument(ref TonlReader reader, Type targetType)
     {
         var result = new Dictionary<string, object?>();
@@ -494,16 +698,7 @@ public static class TonlSerializer
 
             var currentDict = stack.Peek().dict;
 
-            // Try to parse as object header
-            if (reader.TryParseObjectHeader(trimmed, out var objKey, out var objColumns))
-            {
-                var newDict = new Dictionary<string, object?>();
-                currentDict[objKey] = newDict;
-                stack.Push((newDict, currentIndent));
-                continue;
-            }
-
-            // Try to parse as array header
+            // Try to parse as array header FIRST (more specific - has [N])
             if (reader.TryParseArrayHeader(trimmed, out var arrKey, out var arrCount, out var arrColumns))
             {
                 if (arrColumns.Length > 0)
@@ -565,15 +760,118 @@ public static class TonlSerializer
                         }
                     }
 
-                    // Mixed array - create placeholder
-                    currentDict[arrKey] = new List<object?>();
+                    // Mixed array - read indexed elements
+                    var mixedItems = new List<object?>(arrCount);
+                    var arrayIndent = currentIndent;
+
+                    while (reader.TryPeekLine(out var nextLine))
+                    {
+                        var nextTrimmed = nextLine;
+                        while (nextTrimmed.Length > 0 && (nextTrimmed[0] == (byte)' ' || nextTrimmed[0] == (byte)'\t'))
+                        {
+                            nextTrimmed = nextTrimmed.Slice(1);
+                        }
+
+                        // Check indentation - must be deeper than array header
+                        int nextIndent = TonlReader.GetIndentLevel(nextLine);
+                        if (nextIndent <= arrayIndent || nextTrimmed.IsEmpty)
+                        {
+                            break;
+                        }
+
+                        // Try to parse as indexed element
+                        if (reader.TryParseIndexedHeader(nextTrimmed, out int elemIndex, out var elemColumns, out bool hasInlineValue))
+                        {
+                            reader.ReadLine(out _); // Consume the line
+
+                            // Ensure list is big enough
+                            while (mixedItems.Count <= elemIndex)
+                            {
+                                mixedItems.Add(null);
+                            }
+
+                            if (elemColumns.Length > 0)
+                            {
+                                // Indexed object element: [N]{col1,col2}:
+                                var elemDict = new Dictionary<string, object?>();
+                                mixedItems[elemIndex] = elemDict;
+                                stack.Push((elemDict, nextIndent));
+                            }
+                            else if (hasInlineValue)
+                            {
+                                // Indexed primitive with inline value: [N]: value
+                                int valueColonIdx = nextTrimmed.IndexOf((byte)':');
+                                if (valueColonIdx >= 0)
+                                {
+                                    var valuePart = nextTrimmed.Slice(valueColonIdx + 1);
+                                    mixedItems[elemIndex] = reader.ParsePrimitiveValue(valuePart);
+                                }
+                            }
+                            else
+                            {
+                                // Nested structure follows
+                                var elemDict = new Dictionary<string, object?>();
+                                mixedItems[elemIndex] = elemDict;
+                                stack.Push((elemDict, nextIndent));
+                            }
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+
+                    currentDict[arrKey] = mixedItems;
                 }
+                continue;
+            }
+
+            // Try to parse as object header
+            if (reader.TryParseObjectHeader(trimmed, out var objKey, out var objColumns))
+            {
+                var newDict = new Dictionary<string, object?>();
+                currentDict[objKey] = newDict;
+                stack.Push((newDict, currentIndent));
                 continue;
             }
 
             // Try to parse as key-value
             if (reader.TryParseKeyValue(trimmed, out var kvKey, out var kvValue))
             {
+                // Check for multiline string (triple-quoted that spans multiple lines)
+                int colonIdx = FindKeyEndForKv(trimmed);
+                if (colonIdx >= 0)
+                {
+                    var valueSpan = trimmed.Slice(colonIdx + 1);
+                    if (TonlReader.StartsWithIncompleteTripleQuote(valueSpan))
+                    {
+                        // Read additional lines until we find closing """
+                        var sb = new StringBuilder();
+                        var afterOpening = TrimWhitespace(valueSpan).Slice(3); // Skip opening """
+                        sb.Append(Encoding.UTF8.GetString(afterOpening));
+
+                        while (reader.ReadLine(out var nextLine))
+                        {
+                            // Check if this line contains closing """
+                            int closeIdx = FindClosingTripleQuote(nextLine);
+                            if (closeIdx >= 0)
+                            {
+                                // Append content before closing quotes
+                                sb.Append('\n');
+                                sb.Append(Encoding.UTF8.GetString(nextLine.Slice(0, closeIdx)));
+                                break;
+                            }
+                            else
+                            {
+                                // Append entire line
+                                sb.Append('\n');
+                                sb.Append(Encoding.UTF8.GetString(nextLine));
+                            }
+                        }
+
+                        kvValue = sb.ToString();
+                    }
+                }
                 currentDict[kvKey] = kvValue;
             }
         }
@@ -707,6 +1005,63 @@ public static class TonlSerializer
 
         public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
         public int GetHashCode(object obj) => RuntimeHelpers.GetHashCode(obj);
+    }
+
+    private static ReadOnlySpan<byte> TrimWhitespace(ReadOnlySpan<byte> span)
+    {
+        int start = 0;
+        while (start < span.Length && (span[start] == ' ' || span[start] == '\t'))
+        {
+            start++;
+        }
+        int end = span.Length;
+        while (end > start && (span[end - 1] == ' ' || span[end - 1] == '\t'))
+        {
+            end--;
+        }
+        return span.Slice(start, end - start);
+    }
+
+    /// <summary>
+    /// Finds the colon position after a key (accounting for quoted keys).
+    /// </summary>
+    private static int FindKeyEndForKv(ReadOnlySpan<byte> line)
+    {
+        bool inQuotes = false;
+        for (int i = 0; i < line.Length; i++)
+        {
+            byte c = line[i];
+            if (c == (byte)'"')
+            {
+                // Handle escaped quotes
+                if (i + 1 < line.Length && line[i + 1] == (byte)'"')
+                {
+                    i++; // Skip escaped quote
+                    continue;
+                }
+                inQuotes = !inQuotes;
+            }
+            else if (c == (byte)':' && !inQuotes)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Finds the position of closing triple quotes (""") in a line.
+    /// </summary>
+    private static int FindClosingTripleQuote(ReadOnlySpan<byte> line)
+    {
+        for (int i = 0; i <= line.Length - 3; i++)
+        {
+            if (line[i] == (byte)'"' && line[i + 1] == (byte)'"' && line[i + 2] == (byte)'"')
+            {
+                return i;
+            }
+        }
+        return -1;
     }
 
 }

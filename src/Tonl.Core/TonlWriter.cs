@@ -84,7 +84,7 @@ public ref struct TonlWriter
     /// </summary>
     public void WriteObjectHeader(ReadOnlySpan<char> key, ReadOnlySpan<string> columns)
     {
-        WriteUtf8String(key);
+        WriteKey(key);
         WriteByte((byte)'{');
 
         for (int i = 0; i < columns.Length; i++)
@@ -93,7 +93,7 @@ public ref struct TonlWriter
             {
                 WriteByte((byte)',');
             }
-            WriteUtf8String(columns[i]);
+            WriteKey(columns[i]);
         }
 
         WriteByte((byte)'}');
@@ -105,7 +105,7 @@ public ref struct TonlWriter
     /// </summary>
     public void WriteArrayHeader(ReadOnlySpan<char> key, int count, ReadOnlySpan<string> columns)
     {
-        WriteUtf8String(key);
+        WriteKey(key);
         WriteByte((byte)'[');
         WriteInt32(count);
         WriteByte((byte)']');
@@ -119,7 +119,7 @@ public ref struct TonlWriter
                 {
                     WriteByte((byte)',');
                 }
-                WriteUtf8String(columns[i]);
+                WriteKey(columns[i]);
             }
             WriteByte((byte)'}');
         }
@@ -132,7 +132,7 @@ public ref struct TonlWriter
     /// </summary>
     public void WritePrimitiveArrayHeader(ReadOnlySpan<char> key, int count)
     {
-        WriteUtf8String(key);
+        WriteKey(key);
         WriteByte((byte)'[');
         WriteInt32(count);
         WriteByte((byte)']');
@@ -140,11 +140,129 @@ public ref struct TonlWriter
     }
 
     /// <summary>
+    /// Writes an indexed array element header: [N]:
+    /// </summary>
+    public void WriteIndexedArrayHeader(int index)
+    {
+        WriteByte((byte)'[');
+        WriteInt32(index);
+        WriteByte((byte)']');
+        WriteByte((byte)':');
+    }
+
+    /// <summary>
+    /// Writes an indexed array element with object columns: [N]{col1,col2,...}:
+    /// </summary>
+    public void WriteIndexedObjectHeader(int index, ReadOnlySpan<string> columns)
+    {
+        WriteByte((byte)'[');
+        WriteInt32(index);
+        WriteByte((byte)']');
+        WriteByte((byte)'{');
+
+        for (int i = 0; i < columns.Length; i++)
+        {
+            if (i > 0)
+            {
+                WriteByte((byte)',');
+            }
+            WriteKey(columns[i]);
+        }
+
+        WriteByte((byte)'}');
+        WriteByte((byte)':');
+    }
+
+    /// <summary>
+    /// Writes a key, quoting it if necessary for special characters.
+    /// </summary>
+    public void WriteKey(ReadOnlySpan<char> key)
+    {
+        if (KeyNeedsQuoting(key))
+        {
+            WriteQuotedKey(key);
+        }
+        else
+        {
+            WriteUtf8String(key);
+        }
+    }
+
+    /// <summary>
+    /// Determines if a key needs to be quoted.
+    /// </summary>
+    public static bool KeyNeedsQuoting(ReadOnlySpan<char> key)
+    {
+        if (key.IsEmpty)
+        {
+            return true; // Empty keys must be quoted
+        }
+
+        // Keys starting with a digit need quoting (would look like numbers)
+        if (char.IsDigit(key[0]))
+        {
+            return true;
+        }
+
+        // Check for special characters that require quoting
+        foreach (char c in key)
+        {
+            if (c == '#' || c == '@' || c == ':' || c == ',' ||
+                c == '{' || c == '}' || c == '[' || c == ']' ||
+                c == '"' || c == ' ' || c == '-' || c == '.' ||
+                c == '\t' || c == '\n' || c == '\r')
+            {
+                return true;
+            }
+        }
+
+        // Check for leading/trailing whitespace
+        if (char.IsWhiteSpace(key[0]) || char.IsWhiteSpace(key[^1]))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private void WriteQuotedKey(ReadOnlySpan<char> key)
+    {
+        WriteByte((byte)'"');
+
+        foreach (char c in key)
+        {
+            if (c == '"')
+            {
+                // Escape quotes by doubling
+                WriteByte((byte)'"');
+                WriteByte((byte)'"');
+            }
+            else if (c == '\\')
+            {
+                // Escape backslashes
+                WriteByte((byte)'\\');
+                WriteByte((byte)'\\');
+            }
+            else if (c < 128)
+            {
+                WriteByte((byte)c);
+            }
+            else
+            {
+                // Write multi-byte UTF-8 directly to buffer
+                WriteUtf8Char(c);
+            }
+        }
+
+        WriteByte((byte)'"');
+    }
+
+    /// <summary>
     /// Writes a key-value pair: key: value
     /// </summary>
     public void WriteKeyValue(ReadOnlySpan<char> key, ReadOnlySpan<char> value)
     {
-        WriteUtf8String(key);
+        WriteKey(key);
         WriteRaw(ColonSpace);
         WriteStringValue(value);
     }
@@ -154,7 +272,7 @@ public ref struct TonlWriter
     /// </summary>
     public void WriteKeyNull(ReadOnlySpan<char> key)
     {
-        WriteUtf8String(key);
+        WriteKey(key);
         WriteRaw(ColonSpace);
         WriteRaw(NullLiteral);
     }
@@ -164,7 +282,7 @@ public ref struct TonlWriter
     /// </summary>
     public void WriteKeyBoolean(ReadOnlySpan<char> key, bool value)
     {
-        WriteUtf8String(key);
+        WriteKey(key);
         WriteRaw(ColonSpace);
         WriteRaw(value ? TrueLiteral : FalseLiteral);
     }
@@ -174,7 +292,7 @@ public ref struct TonlWriter
     /// </summary>
     public void WriteKeyInt32(ReadOnlySpan<char> key, int value)
     {
-        WriteUtf8String(key);
+        WriteKey(key);
         WriteRaw(ColonSpace);
         WriteInt32(value);
     }
@@ -184,7 +302,7 @@ public ref struct TonlWriter
     /// </summary>
     public void WriteKeyInt64(ReadOnlySpan<char> key, long value)
     {
-        WriteUtf8String(key);
+        WriteKey(key);
         WriteRaw(ColonSpace);
         WriteInt64(value);
     }
@@ -194,7 +312,7 @@ public ref struct TonlWriter
     /// </summary>
     public void WriteKeyDouble(ReadOnlySpan<char> key, double value)
     {
-        WriteUtf8String(key);
+        WriteKey(key);
         WriteRaw(ColonSpace);
         WriteDouble(value);
     }
@@ -288,12 +406,15 @@ public ref struct TonlWriter
     }
 
     /// <summary>
-    /// Writes the delimiter character followed by a space.
+    /// Writes the delimiter character, optionally followed by a space.
     /// </summary>
     public void WriteDelimiter()
     {
         WriteByte((byte)_options.Delimiter);
-        WriteByte((byte)' ');
+        if (_options.PrettyDelimiters)
+        {
+            WriteByte((byte)' ');
+        }
     }
 
     /// <summary>
@@ -384,8 +505,8 @@ public ref struct TonlWriter
 
         int i = 0;
 
-        // Optional leading minus
-        if (value[0] == '-')
+        // Optional leading sign (+ or -)
+        if (value[0] == '-' || value[0] == '+')
         {
             i++;
             if (i >= value.Length)

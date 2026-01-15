@@ -1,0 +1,83 @@
+[
+  {
+    "Fixture": "sample-users.json",
+    "JsonBytes": 611,
+    "TonlBytes": 668,
+    "CompressionRatio": 0.9146706586826348,
+    "SavingsPercent": -9.328968903436996,
+    "EstimatedJsonTokens": 226,
+    "EstimatedTonlTokens": 238
+  },
+  {
+    "Fixture": "ecommerce-products.json",
+    "JsonBytes": 1778,
+    "TonlBytes": 1664,
+    "CompressionRatio": 1.0685096153846154,
+    "SavingsPercent": 6.411698537682787,
+    "EstimatedJsonTokens": 646,
+    "EstimatedTonlTokens": 571
+  },
+  {
+    "Fixture": "complex-nested.json",
+    "JsonBytes": 1146,
+    "TonlBytes": 1181,
+    "CompressionRatio": 0.9703640982218459,
+    "SavingsPercent": -3.054101221640493,
+    "EstimatedJsonTokens": 414,
+    "EstimatedTonlTokens": 398
+  },
+  {
+    "Fixture": "configuration.json",
+    "JsonBytes": 2661,
+    "TonlBytes": 2946,
+    "CompressionRatio": 0.9032586558044806,
+    "SavingsPercent": -10.710259301014657,
+    "EstimatedJsonTokens": 941,
+    "EstimatedTonlTokens": 957
+  },
+  {
+    "Fixture": "api-response.json",
+    "JsonBytes": 1686,
+    "TonlBytes": 1708,
+    "CompressionRatio": 0.9871194379391101,
+    "SavingsPercent": -1.3048635824436605,
+    "EstimatedJsonTokens": 587,
+    "EstimatedTonlTokens": 552
+  },
+  {
+    "Fixture": "nested-project.json",
+    "JsonBytes": 710,
+    "TonlBytes": 572,
+    "CompressionRatio": 1.2412587412587412,
+    "SavingsPercent": 19.436619718309856,
+    "EstimatedJsonTokens": 268,
+    "EstimatedTonlTokens": 205
+  },
+  {
+    "Fixture": "northwind.json",
+    "JsonBytes": 19466,
+    "TonlBytes": 6867,
+    "CompressionRatio": 2.834716761322266,
+    "SavingsPercent": 64.72310695571765,
+    "EstimatedJsonTokens": 7110,
+    "EstimatedTonlTokens": 2931
+  },
+  {
+    "Fixture": "sample.json",
+    "JsonBytes": 6862,
+    "TonlBytes": 7426,
+    "CompressionRatio": 0.9240506329113924,
+    "SavingsPercent": -8.219178082191792,
+    "EstimatedJsonTokens": 2590,
+    "EstimatedTonlTokens": 2474
+  },
+  {
+    "Fixture": "large-dataset.json",
+    "JsonBytes": 2275,
+    "TonlBytes": 2552,
+    "CompressionRatio": 0.8914576802507836,
+    "SavingsPercent": -12.175824175824168,
+    "EstimatedJsonTokens": 792,
+    "EstimatedTonlTokens": 801
+  }
+]

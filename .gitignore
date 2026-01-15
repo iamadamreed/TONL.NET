@@ -32,6 +32,9 @@ coverage/
 artifacts/
 publish/
 
+# Benchmarks
+BenchmarkDotNet.Artifacts/
+
 # OS files
 .DS_Store
 Thumbs.db

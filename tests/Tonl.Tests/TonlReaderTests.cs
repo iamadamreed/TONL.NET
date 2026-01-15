@@ -282,4 +282,158 @@ public class TonlReaderTests
         Assert.Equal("\"Hello, world\"", Encoding.UTF8.GetString(line[fields[0]]));
         Assert.Equal("42", Encoding.UTF8.GetString(line[fields[1]]));
     }
+
+    // Quoted Keys Parsing Tests
+
+    [Fact]
+    public void TryParseObjectHeader_QuotedKey()
+    {
+        var reader = new TonlReader(ReadOnlySpan<byte>.Empty);
+        var line = "\"@type\"{id,name}:"u8;
+
+        Assert.True(reader.TryParseObjectHeader(line, out var key, out var columns));
+        Assert.Equal("@type", key);
+        Assert.Equal(new[] { "id", "name" }, columns);
+    }
+
+    [Fact]
+    public void TryParseObjectHeader_QuotedColumns()
+    {
+        var reader = new TonlReader(ReadOnlySpan<byte>.Empty);
+        var line = "data{\"field-1\",\"field-2\"}:"u8;
+
+        Assert.True(reader.TryParseObjectHeader(line, out var key, out var columns));
+        Assert.Equal("data", key);
+        Assert.Equal(new[] { "field-1", "field-2" }, columns);
+    }
+
+    [Fact]
+    public void TryParseArrayHeader_QuotedKey()
+    {
+        var reader = new TonlReader(ReadOnlySpan<byte>.Empty);
+        var line = "\"@items\"[3]{id,name}:"u8;
+
+        Assert.True(reader.TryParseArrayHeader(line, out var key, out var count, out var columns));
+        Assert.Equal("@items", key);
+        Assert.Equal(3, count);
+        Assert.Equal(new[] { "id", "name" }, columns);
+    }
+
+    [Fact]
+    public void TryParseKeyValue_QuotedKey()
+    {
+        var reader = new TonlReader(ReadOnlySpan<byte>.Empty);
+        var line = "\"@type\": User"u8;
+
+        Assert.True(reader.TryParseKeyValue(line, out var key, out var value));
+        Assert.Equal("@type", key);
+        Assert.Equal("User", value);
+    }
+
+    [Fact]
+    public void TryParseKeyValue_QuotedKeyWithEscapedQuote()
+    {
+        var reader = new TonlReader(ReadOnlySpan<byte>.Empty);
+        var line = "\"key\"\"name\": value"u8;
+
+        Assert.True(reader.TryParseKeyValue(line, out var key, out var value));
+        Assert.Equal("key\"name", key);
+        Assert.Equal("value", value);
+    }
+
+    // Indexed Header Parsing Tests
+
+    [Fact]
+    public void TryParseIndexedHeader_PrimitiveValue()
+    {
+        var reader = new TonlReader(ReadOnlySpan<byte>.Empty);
+        var line = "[0]: value"u8;
+
+        Assert.True(reader.TryParseIndexedHeader(line, out var index, out var columns, out var hasValue));
+        Assert.Equal(0, index);
+        Assert.Empty(columns);
+        Assert.True(hasValue);
+    }
+
+    [Fact]
+    public void TryParseIndexedHeader_ObjectWithColumns()
+    {
+        var reader = new TonlReader(ReadOnlySpan<byte>.Empty);
+        var line = "[1]{name,age}:"u8;
+
+        Assert.True(reader.TryParseIndexedHeader(line, out var index, out var columns, out var hasValue));
+        Assert.Equal(1, index);
+        Assert.Equal(new[] { "name", "age" }, columns);
+        Assert.False(hasValue);
+    }
+
+    [Fact]
+    public void TryParseIndexedHeader_ObjectWithQuotedColumns()
+    {
+        var reader = new TonlReader(ReadOnlySpan<byte>.Empty);
+        var line = "[2]{\"@id\",\"first-name\"}:"u8;
+
+        Assert.True(reader.TryParseIndexedHeader(line, out var index, out var columns, out var hasValue));
+        Assert.Equal(2, index);
+        Assert.Equal(new[] { "@id", "first-name" }, columns);
+        Assert.False(hasValue);
+    }
+
+    [Fact]
+    public void TryParseIndexedHeader_NoInlineValue()
+    {
+        var reader = new TonlReader(ReadOnlySpan<byte>.Empty);
+        var line = "[5]:"u8;
+
+        Assert.True(reader.TryParseIndexedHeader(line, out var index, out var columns, out var hasValue));
+        Assert.Equal(5, index);
+        Assert.Empty(columns);
+        Assert.False(hasValue);
+    }
+
+    // Delimiter Auto-Detection Tests
+
+    [Fact]
+    public void ParseHeaders_AutoDetectsDelimiter_Pipe()
+    {
+        var tonl = "#version 1.0\nusers[2]{id,name}:\n1|Alice\n2|Bob"u8;
+        var reader = new TonlReader(tonl);
+
+        reader.ParseHeaders();
+
+        Assert.Equal('|', reader.Delimiter);
+    }
+
+    [Fact]
+    public void ParseHeaders_AutoDetectsDelimiter_Tab()
+    {
+        var tonl = "#version 1.0\nusers[2]{id,name}:\n1\tAlice\n2\tBob"u8;
+        var reader = new TonlReader(tonl);
+
+        reader.ParseHeaders();
+
+        Assert.Equal('\t', reader.Delimiter);
+    }
+
+    [Fact]
+    public void ParseHeaders_AutoDetectsDelimiter_Semicolon()
+    {
+        var tonl = "#version 1.0\nusers[2]{id,name}:\n1;Alice\n2;Bob"u8;
+        var reader = new TonlReader(tonl);
+
+        reader.ParseHeaders();
+
+        Assert.Equal(';', reader.Delimiter);
+    }
+
+    [Fact]
+    public void ParseHeaders_DefaultsToComma_WhenNoData()
+    {
+        var tonl = "#version 1.0\nroot{name}: name: Alice"u8;
+        var reader = new TonlReader(tonl);
+
+        reader.ParseHeaders();
+
+        Assert.Equal(',', reader.Delimiter);
+    }
 }
