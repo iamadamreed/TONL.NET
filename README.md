@@ -111,10 +111,19 @@ dotnet test
 dotnet run --project benchmarks/Tonl.Benchmarks -c Release
 ```
 
+## Acknowledgments
+
+This library is a .NET implementation of the **TONL format** created by [Adam Reed](https://github.com/iamadamreed).
+
+Special thanks to the [official TONL project](https://github.com/iamadamreed/tonl) for:
+- The TONL specification and format design
+- Reference TypeScript implementation
+- Comprehensive test fixtures used to validate this implementation
+
 ## License
 
 MIT
 
 ## Related
 
-- [TONL Specification](https://github.com/iamadamreed/tonl) - Official TONL format specification and TypeScript implementation
+- [TONL](https://github.com/iamadamreed/tonl) - Official TONL specification and TypeScript implementation (the original library this project is based on)
