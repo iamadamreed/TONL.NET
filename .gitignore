@@ -38,3 +38,6 @@ BenchmarkDotNet.Artifacts/
 # OS files
 .DS_Store
 Thumbs.db
+
+# direnv (contains tokens)
+.envrc
