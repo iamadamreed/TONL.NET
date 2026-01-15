@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "K4w0zhV/PH4=",
+  "success": true,
+  "projectFilePath": "/Users/smarter/dev/Tonl.NET/src/Tonl.Core/Tonl.Core.csproj",
+  "expectedPackageFiles": [
+    "/Users/smarter/.nuget/packages/microsoft.netcore.app.ref/8.0.22/microsoft.netcore.app.ref.8.0.22.nupkg.sha512",
+    "/Users/smarter/.nuget/packages/microsoft.aspnetcore.app.ref/8.0.22/microsoft.aspnetcore.app.ref.8.0.22.nupkg.sha512"
+  ],
+  "logs": []
+}

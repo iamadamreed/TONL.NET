@@ -1,0 +1,11 @@
+/Users/smarter/dev/Tonl.NET/src/Tonl.Core/obj/Debug/net8.0/Tonl.Core.GeneratedMSBuildEditorConfig.editorconfig
+/Users/smarter/dev/Tonl.NET/src/Tonl.Core/obj/Debug/net8.0/Tonl.Core.AssemblyInfoInputs.cache
+/Users/smarter/dev/Tonl.NET/src/Tonl.Core/obj/Debug/net8.0/Tonl.Core.AssemblyInfo.cs
+/Users/smarter/dev/Tonl.NET/src/Tonl.Core/obj/Debug/net8.0/Tonl.Core.csproj.CoreCompileInputs.cache
+/Users/smarter/dev/Tonl.NET/src/Tonl.Core/bin/Debug/net8.0/Tonl.Core.deps.json
+/Users/smarter/dev/Tonl.NET/src/Tonl.Core/bin/Debug/net8.0/Tonl.Core.dll
+/Users/smarter/dev/Tonl.NET/src/Tonl.Core/bin/Debug/net8.0/Tonl.Core.pdb
+/Users/smarter/dev/Tonl.NET/src/Tonl.Core/obj/Debug/net8.0/Tonl.Core.dll
+/Users/smarter/dev/Tonl.NET/src/Tonl.Core/obj/Debug/net8.0/refint/Tonl.Core.dll
+/Users/smarter/dev/Tonl.NET/src/Tonl.Core/obj/Debug/net8.0/Tonl.Core.pdb
+/Users/smarter/dev/Tonl.NET/src/Tonl.Core/obj/Debug/net8.0/ref/Tonl.Core.dll
