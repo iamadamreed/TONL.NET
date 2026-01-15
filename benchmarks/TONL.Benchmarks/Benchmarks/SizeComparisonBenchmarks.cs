@@ -1,3 +1,4 @@
+using TONL.NET;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
@@ -5,7 +6,7 @@ using BenchmarkDotNet.Jobs;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace TONL.Benchmarks;
+namespace TONL.NET.Benchmarks;
 
 /// <summary>
 /// Size comparison benchmarks - measures output byte sizes for TONL vs JSON.

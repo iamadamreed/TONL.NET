@@ -1,6 +1,7 @@
+using TONL.NET;
 using Xunit;
 
-namespace TONL.Tests;
+namespace TONL.NET.Tests;
 
 public class RoundTripTests
 {

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace TONL.Benchmarks.Models;
+namespace TONL.NET.Benchmarks.Models;
 
 /// <summary>
 /// User model matching sample-users.json fixture.

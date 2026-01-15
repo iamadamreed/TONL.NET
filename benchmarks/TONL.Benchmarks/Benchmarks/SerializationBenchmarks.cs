@@ -1,9 +1,10 @@
+using TONL.NET;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Jobs;
 using System.Text.Json;
-using TONL.Benchmarks.Models;
+using TONL.NET.Benchmarks.Models;
 
-namespace TONL.Benchmarks;
+namespace TONL.NET.Benchmarks;
 
 /// <summary>
 /// Serialization speed benchmarks comparing TONL.NET to System.Text.Json.

@@ -1,6 +1,6 @@
 using System.Buffers;
 
-namespace TONL;
+namespace TONL.NET;
 
 /// <summary>
 /// An <see cref="IBufferWriter{T}"/> implementation backed by <see cref="ArrayPool{T}"/>

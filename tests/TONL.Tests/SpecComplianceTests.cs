@@ -1,6 +1,7 @@
+using TONL.NET;
 using Xunit;
 
-namespace TONL.Tests;
+namespace TONL.NET.Tests;
 
 /// <summary>
 /// Tests for the 17 mandatory spec compliance requirements from TONL Specification v2.5.2.

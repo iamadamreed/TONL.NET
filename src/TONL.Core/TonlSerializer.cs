@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 
-namespace TONL;
+namespace TONL.NET;
 
 /// <summary>
 /// Provides methods for serializing and deserializing objects to/from TONL format.

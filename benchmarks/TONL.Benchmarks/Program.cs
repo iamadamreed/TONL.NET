@@ -1,8 +1,8 @@
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Running;
 using BenchmarkDotNet.Diagnosers;
-using TONL.Benchmarks;
-using TONL.Benchmarks.Reports;
+using TONL.NET.Benchmarks;
+using TONL.NET.Benchmarks.Reports;
 
 // Check for special commands
 if (args.Length > 0 && args[0] == "--size-report")

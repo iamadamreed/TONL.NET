@@ -1,4 +1,4 @@
-namespace TONL;
+namespace TONL.NET;
 
 /// <summary>
 /// Represents the type of token encountered during TONL parsing.

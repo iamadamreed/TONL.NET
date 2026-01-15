@@ -1,4 +1,4 @@
-namespace TONL;
+namespace TONL.NET;
 
 /// <summary>
 /// Exception thrown when TONL parsing or serialization fails.

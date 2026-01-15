@@ -2,7 +2,7 @@ using System.Buffers;
 using System.Globalization;
 using System.Text;
 
-namespace TONL;
+namespace TONL.NET;
 
 /// <summary>
 /// A high-performance, low-allocation writer for TONL format.

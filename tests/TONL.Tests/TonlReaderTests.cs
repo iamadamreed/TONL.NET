@@ -1,7 +1,8 @@
+using TONL.NET;
 using System.Text;
 using Xunit;
 
-namespace TONL.Tests;
+namespace TONL.NET.Tests;
 
 public class TonlReaderTests
 {

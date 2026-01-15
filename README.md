@@ -14,7 +14,7 @@ A high-performance .NET implementation of [TONL (Token-Optimized Notation Langua
 ## Installation
 
 ```bash
-dotnet add package TONL.Core
+dotnet add package TONL.NET
 ```
 
 ## Quick Start
@@ -22,7 +22,7 @@ dotnet add package TONL.Core
 ### Basic Serialization
 
 ```csharp
-using TONL;
+using TONL.NET;
 
 // Serialize an object to TONL
 var user = new User { Name = "Alice", Age = 30 };

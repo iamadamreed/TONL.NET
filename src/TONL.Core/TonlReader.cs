@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace TONL;
+namespace TONL.NET;
 
 /// <summary>
 /// A high-performance, low-allocation reader for TONL format.

@@ -1,4 +1,4 @@
-namespace TONL;
+namespace TONL.NET;
 
 /// <summary>
 /// Configuration options for TONL serialization and deserialization.

@@ -1,6 +1,7 @@
+using TONL.NET;
 using Xunit;
 
-namespace TONL.Tests;
+namespace TONL.NET.Tests;
 
 /// <summary>
 /// Tests for edge cases and boundary conditions.

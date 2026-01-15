@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace TONL.Benchmarks.Reports;
+namespace TONL.NET.Benchmarks.Reports;
 
 /// <summary>
 /// Cross-language comparison report generator.
