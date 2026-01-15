@@ -7,7 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
     <!-- Package Info -->
-    <PackageId>TONL.Core</PackageId>
+    <PackageId>TONL.NET</PackageId>
     <!-- Version is auto-calculated by MinVer from git tags -->
     <MinVerTagPrefix>v</MinVerTagPrefix>
     <MinVerDefaultPreReleaseIdentifiers>alpha.0</MinVerDefaultPreReleaseIdentifiers>
