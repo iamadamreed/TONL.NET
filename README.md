@@ -77,19 +77,34 @@ while (reader.Read())
 
 ## Performance
 
-Benchmarks comparing Tonl.NET to System.Text.Json on the Northwind dataset (19 KB):
+### vs System.Text.Json
 
-| Metric | Tonl.NET | System.Text.Json |
+Benchmarks on the Northwind dataset (19 KB):
+
+| Metric | TONL.NET | System.Text.Json |
 |--------|----------|------------------|
 | Output Size | 6.1 KB | 19.0 KB |
 | Compression | **3.1x smaller** | - |
 | Deserialize | **1.1x faster** | baseline |
 | Serialize | 1.9x slower | baseline |
 
-TONL excels at compression while maintaining competitive deserialization speed. The format is ideal for:
+### vs Official TypeScript TONL
+
+| Metric | TONL.NET | TypeScript TONL |
+|--------|----------|-----------------|
+| Compression | 3.1x | 3.2x |
+| Serialize | **~95 MB/s** | 45.5 MB/s |
+| Deserialize | **~152 MB/s** | 25.7 MB/s |
+
+TONL.NET achieves **2x faster serialization** and **6x faster deserialization** compared to the official TypeScript implementation, with comparable compression ratios.
+
+### Ideal Use Cases
+
+TONL excels at compression while maintaining competitive speed. The format is ideal for:
 - Network transmission where bandwidth matters
 - Storage-constrained environments
 - Applications that read data more often than write
+- LLM/AI contexts where token efficiency matters
 
 ## Project Structure
 
