@@ -10,6 +10,7 @@
     <PackageId>TONL.Core</PackageId>
     <!-- Version is auto-calculated by MinVer from git tags -->
     <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerDefaultPreReleaseIdentifiers>alpha.0</MinVerDefaultPreReleaseIdentifiers>
     <Authors>Adam Reed</Authors>
     <Company>Adam Reed</Company>
     <Description>High-performance .NET implementation of TONL (Token-Optimized Notation Language). Features 3x compression vs JSON, faster deserialization than System.Text.Json, and zero-allocation design.</Description>

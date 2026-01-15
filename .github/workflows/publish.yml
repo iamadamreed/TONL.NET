@@ -1,9 +1,10 @@
-name: Publish to GitHub Packages
+name: Publish
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+      - alpha
 
 jobs:
   publish:
@@ -14,6 +15,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for MinVer
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -31,28 +34,47 @@ jobs:
       - name: Test
         run: dotnet test --no-build --configuration Release --verbosity normal
 
-      - name: Extract version from tag
+      - name: Calculate version
         id: version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          if [[ "$VERSION" == *"alpha"* ]] || [[ "$VERSION" == *"beta"* ]] || [[ "$VERSION" == *"rc"* ]]; then
-            echo "IS_PRERELEASE=true" >> $GITHUB_OUTPUT
+          # Get MinVer calculated version
+          MINVER_VERSION=$(dotnet msbuild src/TONL.Core/TONL.Core.csproj -getProperty:Version -nologo)
+          echo "MinVer version: $MINVER_VERSION"
+
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            # On main: strip pre-release suffix for stable release
+            STABLE_VERSION=$(echo "$MINVER_VERSION" | sed 's/-alpha\.[0-9]*$//' | sed 's/-beta\.[0-9]*$//' | sed 's/-rc\.[0-9]*$//')
+            echo "VERSION=$STABLE_VERSION" >> $GITHUB_OUTPUT
+            echo "IS_STABLE=true" >> $GITHUB_OUTPUT
+            echo "Stable version: $STABLE_VERSION"
           else
-            echo "IS_PRERELEASE=false" >> $GITHUB_OUTPUT
+            # On alpha: use MinVer version as-is
+            echo "VERSION=$MINVER_VERSION" >> $GITHUB_OUTPUT
+            echo "IS_STABLE=false" >> $GITHUB_OUTPUT
+            echo "Alpha version: $MINVER_VERSION"
           fi
 
       - name: Pack
-        run: dotnet pack src/TONL.Core/TONL.Core.csproj --no-build --configuration Release --output ./nupkg
+        run: dotnet pack src/TONL.Core/TONL.Core.csproj --no-build --configuration Release -p:Version=${{ steps.version.outputs.VERSION }} --output ./nupkg
 
       - name: Push to GitHub Packages
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.GITHUB_TOKEN }} --source https://nuget.pkg.github.com/iamadamreed/index.json --skip-duplicate
 
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="v${{ steps.version.outputs.VERSION }}"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release
-        if: steps.version.outputs.IS_PRERELEASE == 'false'
+        if: steps.version.outputs.IS_STABLE == 'true'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: v${{ steps.version.outputs.VERSION }}
           name: v${{ steps.version.outputs.VERSION }}
           generate_release_notes: true
         env:
