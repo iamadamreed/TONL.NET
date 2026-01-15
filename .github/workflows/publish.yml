@@ -43,7 +43,7 @@ jobs:
           fi
 
       - name: Pack
-        run: dotnet pack src/TONL.Core/TONL.Core.csproj --no-build --configuration Release -p:PackageVersion=${{ steps.version.outputs.VERSION }} --output ./nupkg
+        run: dotnet pack src/TONL.Core/TONL.Core.csproj --no-build --configuration Release --output ./nupkg
 
       - name: Push to GitHub Packages
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.GITHUB_TOKEN }} --source https://nuget.pkg.github.com/iamadamreed/index.json --skip-duplicate
