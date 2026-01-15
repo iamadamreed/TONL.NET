@@ -40,6 +40,8 @@ jobs:
           # Get MinVer calculated version and height
           MINVER_VERSION=$(dotnet msbuild src/TONL.Core/TONL.Core.csproj -getProperty:Version -nologo)
           MINVER_HEIGHT=$(dotnet msbuild src/TONL.Core/TONL.Core.csproj -getProperty:MinVerHeight -nologo)
+          # Default height to 0 if empty
+          MINVER_HEIGHT=${MINVER_HEIGHT:-0}
           echo "MinVer version: $MINVER_VERSION (height: $MINVER_HEIGHT)"
 
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
