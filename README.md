@@ -1,6 +1,6 @@
-# Tonl.NET
+# TONL.NET
 
-A high-performance .NET implementation of the [TONL (Token-Optimized Notation Language)](https://github.com/iamadamreed/tonl) serialization format.
+A high-performance .NET implementation of [TONL (Token-Optimized Notation Language)](https://github.com/tonl-dev/tonl) - the token-optimized data serialization format.
 
 ## Features
 
@@ -113,9 +113,9 @@ dotnet run --project benchmarks/Tonl.Benchmarks -c Release
 
 ## Acknowledgments
 
-This library is a .NET implementation of the **TONL format** created by [Adam Reed](https://github.com/iamadamreed).
+This library is a .NET implementation of the **TONL format** created by the [TONL project](https://github.com/tonl-dev/tonl).
 
-Special thanks to the [official TONL project](https://github.com/iamadamreed/tonl) for:
+Special thanks to the official TONL project for:
 - The TONL specification and format design
 - Reference TypeScript implementation
 - Comprehensive test fixtures used to validate this implementation
@@ -126,4 +126,5 @@ MIT
 
 ## Related
 
-- [TONL](https://github.com/iamadamreed/tonl) - Official TONL specification and TypeScript implementation (the original library this project is based on)
+- [TONL](https://github.com/tonl-dev/tonl) - Official TONL specification and TypeScript implementation
+- [tonl.dev](https://tonl.dev) - TONL project homepage

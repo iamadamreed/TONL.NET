@@ -9,7 +9,7 @@
     <Authors>Adam Reed</Authors>
     <Description>High-performance .NET implementation of TONL (Token-Optimized Notation Language)</Description>
     <PackageTags>serialization;tonl;json-alternative;performance</PackageTags>
-    <RepositoryUrl>https://github.com/iamadamreed/Tonl.NET</RepositoryUrl>
+    <RepositoryUrl>https://github.com/iamadamreed/TONL.NET</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 </Project>
