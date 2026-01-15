@@ -1,8 +1,6 @@
 name: Publish to GitHub Packages
 
 on:
-  release:
-    types: [published]
   push:
     tags:
       - 'v*'
@@ -10,8 +8,6 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Only run on stable releases (no alpha, beta, rc tags)
-    if: ${{ !contains(github.ref, 'alpha') && !contains(github.ref, 'beta') && !contains(github.ref, 'rc') }}
     permissions:
       contents: read
       packages: write
