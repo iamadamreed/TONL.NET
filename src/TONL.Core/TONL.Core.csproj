@@ -1,15 +1,32 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Package Info -->
+    <PackageId>TONL.Core</PackageId>
     <Version>1.0.0-alpha</Version>
     <Authors>Adam Reed</Authors>
-    <Description>High-performance .NET implementation of TONL (Token-Optimized Notation Language)</Description>
-    <PackageTags>serialization;tonl;json-alternative;performance</PackageTags>
+    <Company>Adam Reed</Company>
+    <Description>High-performance .NET implementation of TONL (Token-Optimized Notation Language). Features 3x compression vs JSON, faster deserialization than System.Text.Json, and zero-allocation design.</Description>
+    <PackageTags>serialization;tonl;json-alternative;performance;compression;data-format</PackageTags>
+    <PackageProjectUrl>https://github.com/iamadamreed/TONL.NET</PackageProjectUrl>
     <RepositoryUrl>https://github.com/iamadamreed/TONL.NET</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) 2025 Adam Reed</Copyright>
+
+    <!-- Build Settings -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 </Project>

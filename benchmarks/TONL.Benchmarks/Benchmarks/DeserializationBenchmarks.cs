@@ -10,7 +10,7 @@ namespace TONL.Benchmarks;
 /// Deserialization speed benchmarks comparing TONL.NET to System.Text.Json.
 /// </summary>
 [MemoryDiagnoser]
-[SimpleJob(RuntimeMoniker.Net80)]
+[SimpleJob(RuntimeMoniker.Net90)]
 [MarkdownExporter]
 public class DeserializationBenchmarks
 {

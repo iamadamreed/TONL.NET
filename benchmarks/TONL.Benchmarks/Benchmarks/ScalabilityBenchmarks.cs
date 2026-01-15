@@ -9,7 +9,7 @@ namespace TONL.Benchmarks;
 /// Scalability benchmarks testing performance with varying data sizes.
 /// </summary>
 [MemoryDiagnoser]
-[SimpleJob(RuntimeMoniker.Net80)]
+[SimpleJob(RuntimeMoniker.Net90)]
 [MarkdownExporter]
 public class ScalabilityBenchmarks
 {

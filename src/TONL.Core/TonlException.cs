@@ -20,16 +20,31 @@ public class TonlException : Exception
     /// </summary>
     public long? ByteOffset { get; }
 
+    /// <summary>
+    /// Initializes a new instance of TonlException with a message.
+    /// </summary>
+    /// <param name="message">The error message.</param>
     public TonlException(string message)
         : base(message)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of TonlException with a message and inner exception.
+    /// </summary>
+    /// <param name="message">The error message.</param>
+    /// <param name="innerException">The inner exception.</param>
     public TonlException(string message, Exception innerException)
         : base(message, innerException)
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of TonlException with location information.
+    /// </summary>
+    /// <param name="message">The error message.</param>
+    /// <param name="lineNumber">The line number where the error occurred.</param>
+    /// <param name="position">The character position within the line.</param>
     public TonlException(string message, int lineNumber, int position)
         : base(FormatMessage(message, lineNumber, position))
     {
@@ -37,6 +52,11 @@ public class TonlException : Exception
         Position = position;
     }
 
+    /// <summary>
+    /// Initializes a new instance of TonlException with byte offset information.
+    /// </summary>
+    /// <param name="message">The error message.</param>
+    /// <param name="byteOffset">The byte offset where the error occurred.</param>
     public TonlException(string message, long byteOffset)
         : base($"{message} (at byte offset {byteOffset})")
     {
@@ -54,6 +74,10 @@ public class TonlException : Exception
 /// </summary>
 public class TonlCircularReferenceException : TonlException
 {
+    /// <summary>
+    /// Initializes a new instance of TonlCircularReferenceException.
+    /// </summary>
+    /// <param name="path">The object path where the circular reference was detected.</param>
     public TonlCircularReferenceException(string path)
         : base($"Circular reference detected at: {path}")
     {

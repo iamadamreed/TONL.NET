@@ -11,7 +11,7 @@ namespace TONL.Benchmarks;
 /// Size comparison benchmarks - measures output byte sizes for TONL vs JSON.
 /// This data is directly comparable to official TONL TypeScript benchmarks.
 /// </summary>
-[SimpleJob(RuntimeMoniker.Net80, launchCount: 1, warmupCount: 1, iterationCount: 1)]
+[SimpleJob(RuntimeMoniker.Net90, launchCount: 1, warmupCount: 1, iterationCount: 1)]
 [MarkdownExporter]
 public class SizeComparisonBenchmarks
 {

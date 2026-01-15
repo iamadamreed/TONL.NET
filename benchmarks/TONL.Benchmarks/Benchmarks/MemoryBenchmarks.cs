@@ -9,7 +9,7 @@ namespace TONL.Benchmarks;
 /// Memory allocation benchmarks comparing allocation patterns.
 /// </summary>
 [MemoryDiagnoser]
-[SimpleJob(RuntimeMoniker.Net80)]
+[SimpleJob(RuntimeMoniker.Net90)]
 [MarkdownExporter]
 public class MemoryBenchmarks
 {
