@@ -1,5 +1,4 @@
 using TONL.NET;
-using TONL.NET.Benchmarks.Generated;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Jobs;
 
@@ -7,7 +6,7 @@ namespace TONL.NET.Benchmarks;
 
 /// <summary>
 /// Benchmarks comparing reflection-based serialization to source-generated serialization.
-/// Demonstrates the performance gains from compile-time code generation.
+/// Uses the context-based pattern (similar to System.Text.Json) for AOT-compatible serialization.
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RuntimeMoniker.Net90)]
@@ -18,9 +17,9 @@ public class SourceGeneratorBenchmarks
     private BenchmarkRecord _record = null!;
     private BenchmarkPoco _poco = null!;
     private LargeRecord _largeRecord = null!;
-    private Dictionary<string, object?> _recordDict = null!;
-    private Dictionary<string, object?> _pocoDict = null!;
-    private Dictionary<string, object?> _largeRecordDict = null!;
+    private string _recordTonl = null!;
+    private string _pocoTonl = null!;
+    private string _largeRecordTonl = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -38,10 +37,10 @@ public class SourceGeneratorBenchmarks
             1, "Field1", 2, "Field2", 3, "Field3", 4, "Field4", 5, "Field5",
             6, "Field6", 7, "Field7", 8, "Field8", 9, "Field9", 10, "Field10");
 
-        // Pre-create dictionaries for deserialization benchmarks
-        _recordDict = BenchmarkRecordTonlSerializer.Serialize(_record);
-        _pocoDict = BenchmarkPocoTonlSerializer.Serialize(_poco);
-        _largeRecordDict = LargeRecordTonlSerializer.Serialize(_largeRecord);
+        // Pre-serialize for deserialization benchmarks
+        _recordTonl = TonlSerializer.SerializeToString(_record, BenchmarkTonlContext.Default.BenchmarkRecord);
+        _pocoTonl = TonlSerializer.SerializeToString(_poco, BenchmarkTonlContext.Default.BenchmarkPoco);
+        _largeRecordTonl = TonlSerializer.SerializeToString(_largeRecord, BenchmarkTonlContext.Default.LargeRecord);
     }
 
     // --- Serialization Benchmarks ---
@@ -49,55 +48,34 @@ public class SourceGeneratorBenchmarks
     [Benchmark(Description = "Reflection - Serialize Record")]
     public string Reflection_Serialize_Record() => TonlSerializer.SerializeToString(_record);
 
-    [Benchmark(Description = "Generated - Serialize Record")]
-    public string Generated_Serialize_Record() => BenchmarkRecordTonlSerializer.SerializeToString(_record);
+    [Benchmark(Description = "SourceGen - Serialize Record")]
+    public string SourceGen_Serialize_Record() => TonlSerializer.SerializeToString(_record, BenchmarkTonlContext.Default.BenchmarkRecord);
 
     [Benchmark(Description = "Reflection - Serialize POCO")]
     public string Reflection_Serialize_Poco() => TonlSerializer.SerializeToString(_poco);
 
-    [Benchmark(Description = "Generated - Serialize POCO")]
-    public string Generated_Serialize_Poco() => BenchmarkPocoTonlSerializer.SerializeToString(_poco);
+    [Benchmark(Description = "SourceGen - Serialize POCO")]
+    public string SourceGen_Serialize_Poco() => TonlSerializer.SerializeToString(_poco, BenchmarkTonlContext.Default.BenchmarkPoco);
 
     [Benchmark(Description = "Reflection - Serialize Large Record (20 props)")]
     public string Reflection_Serialize_Large() => TonlSerializer.SerializeToString(_largeRecord);
 
-    [Benchmark(Description = "Generated - Serialize Large Record (20 props)")]
-    public string Generated_Serialize_Large() => LargeRecordTonlSerializer.SerializeToString(_largeRecord);
+    [Benchmark(Description = "SourceGen - Serialize Large Record (20 props)")]
+    public string SourceGen_Serialize_Large() => TonlSerializer.SerializeToString(_largeRecord, BenchmarkTonlContext.Default.LargeRecord);
 
-    // --- Deserialization Benchmarks ---
+    // --- Serialization to Bytes (AOT path) ---
 
-    [Benchmark(Description = "Generated - Deserialize Record")]
-    public BenchmarkRecord Generated_Deserialize_Record() => BenchmarkRecordTonlSerializer.Deserialize(_recordDict);
+    [Benchmark(Description = "SourceGen - Serialize Record to Bytes")]
+    public byte[] SourceGen_Serialize_Record_Bytes() => TonlSerializer.SerializeToBytes(_record, BenchmarkTonlContext.Default.BenchmarkRecord);
 
-    [Benchmark(Description = "Generated - Deserialize POCO")]
-    public BenchmarkPoco Generated_Deserialize_Poco() => BenchmarkPocoTonlSerializer.Deserialize(_pocoDict);
-
-    [Benchmark(Description = "Generated - Deserialize Large Record")]
-    public LargeRecord Generated_Deserialize_Large() => LargeRecordTonlSerializer.Deserialize(_largeRecordDict);
-
-    // --- Dict-to-Dict Round Trip (Generated) ---
-
-    [Benchmark(Description = "Generated - Round Trip Record")]
-    public BenchmarkRecord Generated_RoundTrip_Record()
-    {
-        var dict = BenchmarkRecordTonlSerializer.Serialize(_record);
-        return BenchmarkRecordTonlSerializer.Deserialize(dict);
-    }
-
-    [Benchmark(Description = "Generated - Round Trip Large")]
-    public LargeRecord Generated_RoundTrip_Large()
-    {
-        var dict = LargeRecordTonlSerializer.Serialize(_largeRecord);
-        return LargeRecordTonlSerializer.Deserialize(dict);
-    }
+    [Benchmark(Description = "SourceGen - Serialize Large to Bytes")]
+    public byte[] SourceGen_Serialize_Large_Bytes() => TonlSerializer.SerializeToBytes(_largeRecord, BenchmarkTonlContext.Default.LargeRecord);
 }
 
-// Benchmark models marked with [TonlSerializable]
+// Benchmark models for source generation
 
-[TonlSerializable]
 public record BenchmarkRecord(int Id, string Name, bool IsActive, double Score, DateTime CreatedAt);
 
-[TonlSerializable]
 public class BenchmarkPoco
 {
     public int Id { get; set; }
@@ -107,9 +85,18 @@ public class BenchmarkPoco
     public DateTime CreatedAt { get; set; }
 }
 
-[TonlSerializable]
 public record LargeRecord(
     int Field1, string Field2, int Field3, string Field4, int Field5,
     string Field6, int Field7, string Field8, int Field9, string Field10,
     int Field11, string Field12, int Field13, string Field14, int Field15,
     string Field16, int Field17, string Field18, int Field19, string Field20);
+
+/// <summary>
+/// Source generation context for benchmark types.
+/// Uses the STJ-like pattern for AOT-compatible serialization.
+/// </summary>
+[TonlSourceGenerationOptions]
+[TonlSerializable(typeof(BenchmarkRecord))]
+[TonlSerializable(typeof(BenchmarkPoco))]
+[TonlSerializable(typeof(LargeRecord))]
+public partial class BenchmarkTonlContext : TonlSerializerContext { }

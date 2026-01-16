@@ -454,7 +454,9 @@ public ref partial struct TonlReader
 
         if (long.TryParse(str, NumberStyles.Integer, CultureInfo.InvariantCulture, out long longVal))
         {
-            // Return int if it fits
+            // Return int if value fits, otherwise long. This is intentional - returns
+            // the narrowest type that can represent the value (like JSON parsers).
+            // This is NOT precision loss - the numeric value is always preserved.
             if (longVal >= int.MinValue && longVal <= int.MaxValue)
             {
                 return (int)longVal;

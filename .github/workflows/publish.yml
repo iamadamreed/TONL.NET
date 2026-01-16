@@ -31,8 +31,24 @@ jobs:
       - name: Test
         run: dotnet test --no-build -c Release
 
+  aot-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Publish AOT binary
+        run: dotnet publish tests/TONL.NET.AotTests -c Release -r linux-x64
+
+      - name: Run AOT binary
+        run: ./tests/TONL.NET.AotTests/bin/Release/net9.0/linux-x64/publish/TONL.NET.AotTests
+
   publish:
-    needs: build
+    needs: [build, aot-test]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
