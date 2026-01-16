@@ -125,18 +125,18 @@ Note: TONL throughput is calculated against TONL output size (6.1 KB), while JSO
 
 ```bash
 # Run all benchmarks
-dotnet run --project benchmarks/TONL.Benchmarks -c Release
+dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release
 
 # Run specific benchmark class
-dotnet run --project benchmarks/TONL.Benchmarks -c Release -- --filter '*Serialization*'
+dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release -- --filter '*Serialization*'
 
 # Run on specific framework
-dotnet run --project benchmarks/TONL.Benchmarks -c Release --framework net10.0
+dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release --framework net10.0
 ```
 
 ## Benchmark Fixtures
 
-All benchmarks use fixtures from `benchmarks/TONL.Benchmarks/Fixtures/`, which are identical to the TypeScript SDK's `bench/fixtures/` for cross-platform comparison:
+All benchmarks use fixtures from `benchmarks/TONL.NET.Benchmarks/Fixtures/`, which are identical to the TypeScript SDK's `bench/fixtures/` for cross-platform comparison:
 
 - `sample-users.json` - Small array of user objects (611 B)
 - `nested-project.json` - Nested object structure (710 B)

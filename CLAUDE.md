@@ -15,7 +15,7 @@ dotnet test
 dotnet test --filter "FullyQualifiedName~TestMethodName"
 
 # Run benchmarks
-dotnet run --project benchmarks/TONL.Benchmarks -c Release
+dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release
 ```
 
 ## Architecture
@@ -36,24 +36,24 @@ TONL.NET is a high-performance serialization library for TONL (Token-Optimized N
 Always use CLI tools instead of manually creating project files:
 ```bash
 # Create new class library
-dotnet new classlib -n TONL.NewProject -o src/TONL.NewProject
+dotnet new classlib -n TONL.NET.NewProject -o src/TONL.NET.NewProject
 
 # Add to solution
-dotnet sln add src/TONL.NewProject/TONL.NewProject.csproj
+dotnet sln add src/TONL.NET.NewProject/TONL.NET.NewProject.csproj
 
 # Add project reference
-dotnet add src/TONL.Core reference src/TONL.NewProject
+dotnet add src/TONL.NET.Core reference src/TONL.NET.NewProject
 
 # Add package reference
-dotnet add src/TONL.Core package PackageName
+dotnet add src/TONL.NET.Core package PackageName
 ```
 
 ### Projects
 
-- **TONL.Core** - Core serialization library with ref struct reader/writer for minimal allocations
-- **TONL.SourceGenerator** - Roslyn-based source generator that generates serialization code at compile time
-- **TONL.Tests** - xUnit test project
-- **TONL.Benchmarks** - BenchmarkDotNet performance tests
+- **TONL.NET.Core** - Core serialization library with ref struct reader/writer for minimal allocations
+- **TONL.NET.SourceGenerator** - Roslyn-based source generator that generates serialization code at compile time
+- **TONL.NET.Tests** - xUnit test project
+- **TONL.NET.Benchmarks** - BenchmarkDotNet performance tests
 
 ### Key Types
 
@@ -73,7 +73,7 @@ dotnet add src/TONL.Core package PackageName
 
 ### Dependencies
 
-- CommunityToolkit.HighPerformance (TONL.Core)
-- Microsoft.CodeAnalysis.CSharp (TONL.SourceGenerator)
-- xunit (TONL.Tests)
-- BenchmarkDotNet (TONL.Benchmarks)
+- CommunityToolkit.HighPerformance (TONL.NET.Core)
+- Microsoft.CodeAnalysis.CSharp (TONL.NET.SourceGenerator)
+- xunit (TONL.NET.Tests)
+- BenchmarkDotNet (TONL.NET.Benchmarks)

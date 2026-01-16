@@ -147,10 +147,10 @@ TONL excels at compression while maintaining competitive speed. The format is id
 
 ## Project Structure
 
-- **TONL.Core** - Core serialization library
-- **TONL.SourceGenerator** - Roslyn-based source generator for compile-time serialization
-- **TONL.Tests** - Test suite with 273 spec compliance tests
-- **TONL.Benchmarks** - BenchmarkDotNet performance tests
+- **TONL.NET.Core** - Core serialization library
+- **TONL.NET.SourceGenerator** - Roslyn-based source generator for compile-time serialization
+- **TONL.NET.Tests** - Test suite with 273 spec compliance tests
+- **TONL.NET.Benchmarks** - BenchmarkDotNet performance tests
 
 ## Building
 
@@ -162,7 +162,7 @@ dotnet build
 dotnet test
 
 # Run benchmarks
-dotnet run --project benchmarks/TONL.Benchmarks -c Release
+dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release
 ```
 
 ## Acknowledgments

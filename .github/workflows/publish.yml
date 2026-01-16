@@ -38,8 +38,8 @@ jobs:
         id: version
         run: |
           # Get MinVer calculated version and height
-          MINVER_VERSION=$(dotnet msbuild src/TONL.Core/TONL.Core.csproj -getProperty:Version -nologo)
-          MINVER_HEIGHT=$(dotnet msbuild src/TONL.Core/TONL.Core.csproj -getProperty:MinVerHeight -nologo)
+          MINVER_VERSION=$(dotnet msbuild src/TONL.NET.Core/TONL.NET.Core.csproj -getProperty:Version -nologo)
+          MINVER_HEIGHT=$(dotnet msbuild src/TONL.NET.Core/TONL.NET.Core.csproj -getProperty:MinVerHeight -nologo)
           # Default height to 0 if empty
           MINVER_HEIGHT=${MINVER_HEIGHT:-0}
           echo "MinVer version: $MINVER_VERSION (height: $MINVER_HEIGHT)"
@@ -65,7 +65,7 @@ jobs:
           fi
 
       - name: Pack
-        run: dotnet pack src/TONL.Core/TONL.Core.csproj --no-build --configuration Release -p:Version=${{ steps.version.outputs.VERSION }} --output ./nupkg
+        run: dotnet pack src/TONL.NET.Core/TONL.NET.Core.csproj --no-build --configuration Release -p:Version=${{ steps.version.outputs.VERSION }} --output ./nupkg
 
       - name: Push to GitHub Packages
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.GITHUB_TOKEN }} --source https://nuget.pkg.github.com/iamadamreed/index.json --skip-duplicate
