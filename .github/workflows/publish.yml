@@ -73,23 +73,42 @@ jobs:
       - name: Calculate version
         id: version
         run: |
-          MINVER_VERSION=$(dotnet msbuild src/TONL.NET.Core/TONL.NET.Core.csproj -getProperty:Version -nologo)
-          MINVER_HEIGHT=$(dotnet msbuild src/TONL.NET.Core/TONL.NET.Core.csproj -getProperty:MinVerHeight -nologo)
-          MINVER_HEIGHT=${MINVER_HEIGHT:-0}
+          # Get the latest stable tag (vX.Y.Z without prerelease)
+          LATEST_STABLE_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -v '-' | head -1)
+          echo "Latest stable tag: $LATEST_STABLE_TAG"
+
+          # Count commits since that tag
+          if [[ -n "$LATEST_STABLE_TAG" ]]; then
+            COMMITS_SINCE=$(git rev-list ${LATEST_STABLE_TAG}..HEAD --count)
+          else
+            COMMITS_SINCE=0
+            LATEST_STABLE_TAG="v0.0.0"
+          fi
+          echo "Commits since tag: $COMMITS_SINCE"
+
+          # Parse version components
+          BASE_VERSION=${LATEST_STABLE_TAG#v}
+          MAJOR=$(echo $BASE_VERSION | cut -d. -f1)
+          MINOR=$(echo $BASE_VERSION | cut -d. -f2)
+          PATCH=$(echo $BASE_VERSION | cut -d. -f3)
 
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            VERSION=$(echo "$MINVER_VERSION" | sed 's/-alpha\.[0-9.]*$//' | sed 's/-beta\.[0-9.]*$//' | sed 's/-rc\.[0-9.]*$//')
+            # Main branch: bump patch if there are commits since last stable tag
+            if [[ $COMMITS_SINCE -gt 0 ]]; then
+              PATCH=$((PATCH + 1))
+            fi
+            VERSION="${MAJOR}.${MINOR}.${PATCH}"
             echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
             echo "IS_STABLE=true" >> $GITHUB_OUTPUT
           else
-            if [[ "$MINVER_VERSION" == *"-"* ]]; then
-              VERSION="$MINVER_VERSION"
-            else
-              VERSION="${MINVER_VERSION}-alpha.${MINVER_HEIGHT}"
-            fi
+            # Alpha branch: always bump patch and add alpha suffix
+            PATCH=$((PATCH + 1))
+            VERSION="${MAJOR}.${MINOR}.${PATCH}-alpha.${COMMITS_SINCE}"
             echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
             echo "IS_STABLE=false" >> $GITHUB_OUTPUT
           fi
+
+          echo "Calculated version: $VERSION"
 
       - name: Pack
         run: dotnet pack src/TONL.NET.Core/TONL.NET.Core.csproj -c Release -p:MinVerVersionOverride=${{ steps.version.outputs.VERSION }} -o ./nupkg
