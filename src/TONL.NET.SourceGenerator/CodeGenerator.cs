@@ -48,8 +48,8 @@ internal static class CodeGenerator
             GenerateSerializeMethod(sb, typeInfo);
         }
 
-        // Deserialize method
-        if (typeInfo.GenerateDeserializer)
+        // Deserialize method - only if the type can be instantiated or is a record (uses primary constructor)
+        if (typeInfo.GenerateDeserializer && (typeInfo.CanInstantiate || typeInfo.IsRecord))
         {
             GenerateDeserializeMethod(sb, typeInfo);
         }
@@ -190,7 +190,7 @@ internal static class CodeGenerator
         {
             var prop = typeInfo.Properties[i];
             var comma = i < typeInfo.Properties.Length - 1 ? "," : ");";
-            var conversion = GetDeserializeConversion(prop);
+            var conversion = GetDeserializeConversion(prop, i);
             sb.AppendLine($"                {conversion}{comma}");
         }
     }
@@ -204,7 +204,7 @@ internal static class CodeGenerator
         {
             var prop = typeInfo.Properties[i];
             var comma = i < typeInfo.Properties.Length - 1 ? "," : "";
-            var conversion = GetDeserializeConversion(prop);
+            var conversion = GetDeserializeConversion(prop, i);
             sb.AppendLine($"                {prop.Name} = {conversion}{comma}");
         }
 
@@ -215,16 +215,18 @@ internal static class CodeGenerator
     {
         sb.AppendLine($"            var result = new {typeInfo.FullyQualifiedName}();");
 
-        foreach (var prop in typeInfo.Properties.Where(p => p.HasPublicSetter))
+        var settableProps = typeInfo.Properties.Where(p => p.HasPublicSetter).ToArray();
+        for (int i = 0; i < settableProps.Length; i++)
         {
-            var conversion = GetDeserializeConversion(prop);
+            var prop = settableProps[i];
+            var conversion = GetDeserializeConversion(prop, i);
             sb.AppendLine($"            result.{prop.Name} = {conversion};");
         }
 
         sb.AppendLine("            return result;");
     }
 
-    private static string GetDeserializeConversion(PropertyInfo prop)
+    private static string GetDeserializeConversion(PropertyInfo prop, int index)
     {
         var dictAccess = $"dict[\"{prop.Name}\"]";
         var baseType = prop.TypeName.TrimEnd('?');
@@ -233,33 +235,33 @@ internal static class CodeGenerator
         if (prop.TypeName.Contains("Char") || prop.TypeName == "char")
         {
             return prop.IsNullable
-                ? $"{dictAccess} is string s && s.Length > 0 ? s[0] : null"
+                ? $"{dictAccess} is string s{index} && s{index}.Length > 0 ? s{index}[0] : null"
                 : $"({dictAccess} as string)?[0] ?? default";
         }
 
         return prop.Category switch
         {
-            PropertyCategory.Boolean => GetTypedConversion(dictAccess, "bool", prop.IsNullable),
-            PropertyCategory.Integer => GetNumericConversion(dictAccess, baseType, prop.IsNullable),
-            PropertyCategory.Float => GetNumericConversion(dictAccess, baseType, prop.IsNullable),
-            PropertyCategory.Decimal => GetTypedConversion(dictAccess, "decimal", prop.IsNullable),
+            PropertyCategory.Boolean => GetTypedConversion(dictAccess, "bool", prop.IsNullable, index),
+            PropertyCategory.Integer => GetNumericConversion(dictAccess, baseType, prop.IsNullable, index),
+            PropertyCategory.Float => GetNumericConversion(dictAccess, baseType, prop.IsNullable, index),
+            PropertyCategory.Decimal => GetTypedConversion(dictAccess, "decimal", prop.IsNullable, index),
             PropertyCategory.String => prop.IsNullable ? $"{dictAccess} as string" : $"({dictAccess} as string)!",
-            PropertyCategory.DateTime => GetDateTimeConversion(dictAccess, baseType, prop.IsNullable),
-            PropertyCategory.Guid => GetGuidConversion(dictAccess, prop.IsNullable),
-            PropertyCategory.TimeSpan => GetTimeSpanConversion(dictAccess, prop.IsNullable),
-            PropertyCategory.Enum => GetEnumConversion(dictAccess, baseType, prop.IsNullable),
+            PropertyCategory.DateTime => GetDateTimeConversion(dictAccess, baseType, prop.IsNullable, index),
+            PropertyCategory.Guid => GetGuidConversion(dictAccess, prop.IsNullable, index),
+            PropertyCategory.TimeSpan => GetTimeSpanConversion(dictAccess, prop.IsNullable, index),
+            PropertyCategory.Enum => GetEnumConversion(dictAccess, baseType, prop.IsNullable, index),
             _ => $"({prop.TypeName}){dictAccess}"
         };
     }
 
-    private static string GetTypedConversion(string dictAccess, string typeName, bool isNullable)
+    private static string GetTypedConversion(string dictAccess, string typeName, bool isNullable, int index)
     {
         if (isNullable)
-            return $"{dictAccess} is {typeName} v ? v : null";
+            return $"{dictAccess} is {typeName} v{index} ? v{index} : null";
         return $"({typeName}){dictAccess}!";
     }
 
-    private static string GetNumericConversion(string dictAccess, string typeName, bool isNullable)
+    private static string GetNumericConversion(string dictAccess, string typeName, bool isNullable, int index)
     {
         // Handle numeric conversions from various source types
         var cast = typeName switch
@@ -279,7 +281,7 @@ internal static class CodeGenerator
         };
 
         if (isNullable)
-            return $"{dictAccess} is {cast} n ? n : null";
+            return $"{dictAccess} is {cast} n{index} ? n{index} : null";
         return $"Convert.To{GetConvertMethodName(cast)}({dictAccess})";
     }
 
@@ -302,34 +304,34 @@ internal static class CodeGenerator
         };
     }
 
-    private static string GetDateTimeConversion(string dictAccess, string typeName, bool isNullable)
+    private static string GetDateTimeConversion(string dictAccess, string typeName, bool isNullable, int index)
     {
         var parseMethod = typeName.Contains("DateTimeOffset") ? "DateTimeOffset.Parse" : "DateTime.Parse";
 
         if (isNullable)
-            return $"{dictAccess} is string s ? {parseMethod}(s) : null";
+            return $"{dictAccess} is string s{index} ? {parseMethod}(s{index}) : null";
         return $"{parseMethod}(({dictAccess} as string)!)";
     }
 
-    private static string GetGuidConversion(string dictAccess, bool isNullable)
+    private static string GetGuidConversion(string dictAccess, bool isNullable, int index)
     {
         if (isNullable)
-            return $"{dictAccess} is string s ? Guid.Parse(s) : null";
+            return $"{dictAccess} is string s{index} ? Guid.Parse(s{index}) : null";
         return $"Guid.Parse({dictAccess}?.ToString() ?? throw new InvalidOperationException(\"Guid value is null\"))";
     }
 
-    private static string GetTimeSpanConversion(string dictAccess, bool isNullable)
+    private static string GetTimeSpanConversion(string dictAccess, bool isNullable, int index)
     {
         if (isNullable)
-            return $"{dictAccess} is string s ? TimeSpan.Parse(s) : null";
+            return $"{dictAccess} is string s{index} ? TimeSpan.Parse(s{index}) : null";
         return $"TimeSpan.Parse(({dictAccess} as string)!)";
     }
 
-    private static string GetEnumConversion(string dictAccess, string typeName, bool isNullable)
+    private static string GetEnumConversion(string dictAccess, string typeName, bool isNullable, int index)
     {
         // Handle both int and long since we serialize enums as Int64
         if (isNullable)
-            return $"{dictAccess} is long l ? ({typeName})l : ({dictAccess} is int i ? ({typeName})i : null)";
+            return $"{dictAccess} is long l{index} ? ({typeName})l{index} : ({dictAccess} is int i{index} ? ({typeName})i{index} : null)";
         return $"({typeName})Convert.ToInt64({dictAccess})";
     }
 
