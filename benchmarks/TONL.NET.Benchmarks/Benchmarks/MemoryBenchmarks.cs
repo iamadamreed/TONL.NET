@@ -11,6 +11,7 @@ namespace TONL.NET.Benchmarks;
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RuntimeMoniker.Net90)]
+[SimpleJob(RuntimeMoniker.Net10_0)]
 [MarkdownExporter]
 public class MemoryBenchmarks
 {
@@ -22,7 +23,7 @@ public class MemoryBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        var json = File.ReadAllText("Fixtures/sample-users.json");
+        var json = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample-users.json"));
         _users = JsonSerializer.Deserialize<User[]>(json)!;
         _usersTonlBytes = TonlSerializer.SerializeToBytes(_users);
         _usersJsonBytes = JsonSerializer.SerializeToUtf8Bytes(_users);

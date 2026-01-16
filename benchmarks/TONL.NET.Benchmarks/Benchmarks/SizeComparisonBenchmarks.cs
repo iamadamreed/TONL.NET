@@ -13,6 +13,7 @@ namespace TONL.NET.Benchmarks;
 /// This data is directly comparable to official TONL TypeScript benchmarks.
 /// </summary>
 [SimpleJob(RuntimeMoniker.Net90, launchCount: 1, warmupCount: 1, iterationCount: 1)]
+[SimpleJob(RuntimeMoniker.Net10_0, launchCount: 1, warmupCount: 1, iterationCount: 1)]
 [MarkdownExporter]
 public class SizeComparisonBenchmarks
 {

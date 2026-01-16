@@ -4,11 +4,11 @@ A high-performance .NET implementation of [TONL (Token-Optimized Notation Langua
 
 ## Features
 
-- **Full TONL Spec Compliance** - 263 tests passing against the official specification
-- **High Performance** - Deserialization 1.1x faster than System.Text.Json
-- **Excellent Compression** - 3.1x smaller output than JSON on typical datasets
+- **Full TONL Spec Compliance** - 273 tests passing against the official specification
+- **High Performance** - Competitive deserialization speed with System.Text.Json
+- **Excellent Compression** - Up to 3.2x smaller output than JSON on typical datasets
 - **Zero-Allocation Design** - Ref struct reader/writer for minimal GC pressure
-- **Source Generation** - Optional compile-time serialization code generation
+- **Source Generation** - Compile-time serialization code generation with `[TonlSerializable]`
 - **Familiar API** - System.Text.Json-like patterns for easy adoption
 
 ## Installation
@@ -75,28 +75,67 @@ while (reader.Read())
 }
 ```
 
+### Source Generator
+
+For optimal performance, use the source generator to eliminate runtime reflection:
+
+```csharp
+using TONL.NET;
+
+// Mark your types with [TonlSerializable]
+[TonlSerializable]
+public record User(int Id, string Name, bool IsActive);
+
+// Generated serializer provides typed, reflection-free operations
+var user = new User(1, "Alice", true);
+
+// Serialize to dictionary (for further processing)
+Dictionary<string, object?> dict = UserTonlSerializer.Serialize(user);
+
+// Serialize directly to TONL string
+string tonl = UserTonlSerializer.SerializeToString(user);
+
+// Deserialize from dictionary
+User restored = UserTonlSerializer.Deserialize(dict);
+```
+
+The source generator creates a `{TypeName}TonlSerializer` class with:
+- `Serialize(T value)` → `Dictionary<string, object?>`
+- `SerializeToString(T value, TonlOptions?)` → `string`
+- `Deserialize(Dictionary<string, object?>)` → `T`
+
+**Benefits:**
+- 11-18% faster serialization than reflection
+- Compile-time error checking
+- AOT/trimming compatible
+- Supports records, classes, and structs
+
 ## Performance
+
+Benchmarks run on Apple M4 Pro (14 cores), .NET 10.0.
 
 ### vs System.Text.Json
 
-Benchmarks on the Northwind dataset (19 KB):
+Benchmarks on the Northwind dataset (19 KB JSON → 6.1 KB TONL):
 
-| Metric | TONL.NET | System.Text.Json |
-|--------|----------|------------------|
-| Output Size | 6.1 KB | 19.0 KB |
-| Compression | **3.1x smaller** | - |
-| Deserialize | **1.1x faster** | baseline |
-| Serialize | 1.9x slower | baseline |
+| Metric | TONL.NET | System.Text.Json | Ratio |
+|--------|----------|------------------|-------|
+| Output Size | 6.1 KB | 19.5 KB | **3.2x smaller** |
+| Encode | 34.2 µs | 16.5 µs | 2.1x slower |
+| Decode | 26.9 µs | 27.9 µs | **1.04x faster** |
 
-### vs Official TypeScript TONL
+TONL trades encode speed for compression. Decoding is competitive with JSON.
 
-| Metric | TONL.NET | TypeScript TONL |
-|--------|----------|-----------------|
-| Compression | 3.1x | 3.2x |
-| Serialize | **~95 MB/s** | 45.5 MB/s |
-| Deserialize | **~152 MB/s** | 25.7 MB/s |
+### Compression Ratios
 
-TONL.NET achieves **2x faster serialization** and **6x faster deserialization** compared to the official TypeScript implementation, with comparable compression ratios.
+| Dataset | JSON | TONL | Compression |
+|---------|------|------|-------------|
+| northwind.json | 19.5 KB | 6.1 KB | **3.2x** |
+| nested-project.json | 710 B | 558 B | **1.3x** |
+| sample.json | 6.9 KB | 7.2 KB | 0.96x |
+| sample-users.json | 611 B | 665 B | 0.92x |
+
+TONL compression is most effective on tabular/repetitive data structures.
 
 ### Ideal Use Cases
 
@@ -108,10 +147,10 @@ TONL excels at compression while maintaining competitive speed. The format is id
 
 ## Project Structure
 
-- **TONL.Core** - Core serialization library
-- **TONL.SourceGenerator** - Roslyn-based source generator for compile-time serialization
-- **TONL.Tests** - Test suite with 263 spec compliance tests
-- **TONL.Benchmarks** - BenchmarkDotNet performance tests
+- **TONL.NET.Core** - Core serialization library
+- **TONL.NET.SourceGenerator** - Roslyn-based source generator for compile-time serialization
+- **TONL.NET.Tests** - Test suite with 273 spec compliance tests
+- **TONL.NET.Benchmarks** - BenchmarkDotNet performance tests
 
 ## Building
 
@@ -123,7 +162,7 @@ dotnet build
 dotnet test
 
 # Run benchmarks
-dotnet run --project benchmarks/TONL.Benchmarks -c Release
+dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release
 ```
 
 ## Acknowledgments

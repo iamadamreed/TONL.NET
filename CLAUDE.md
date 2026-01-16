@@ -15,19 +15,45 @@ dotnet test
 dotnet test --filter "FullyQualifiedName~TestMethodName"
 
 # Run benchmarks
-dotnet run --project benchmarks/TONL.Benchmarks -c Release
+dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release
 ```
 
 ## Architecture
 
-TONL.NET is a high-performance serialization library for TONL (Token-Optimized Notation Language) targeting .NET 8.0.
+TONL.NET is a high-performance serialization library for TONL (Token-Optimized Notation Language) targeting .NET 9.0 and .NET 10.0.
+
+### Namespace Convention
+
+**IMPORTANT**: The root namespace is `TONL.NET`. All sub-namespaces follow `TONL.NET.X`:
+- `TONL.NET` - Core types (TonlSerializer, TonlReader, TonlWriter, etc.)
+- `TONL.NET.SourceGenerator` - Source generator types
+- `TONL.NET.Tests` - Test types
+- `TONL.NET.Benchmarks` - Benchmark types
+- `TONL.NET.Generated` - Generated serializer code
+
+### CLI Commands for Project Management
+
+Always use CLI tools instead of manually creating project files:
+```bash
+# Create new class library
+dotnet new classlib -n TONL.NET.NewProject -o src/TONL.NET.NewProject
+
+# Add to solution
+dotnet sln add src/TONL.NET.NewProject/TONL.NET.NewProject.csproj
+
+# Add project reference
+dotnet add src/TONL.NET.Core reference src/TONL.NET.NewProject
+
+# Add package reference
+dotnet add src/TONL.NET.Core package PackageName
+```
 
 ### Projects
 
-- **TONL.Core** - Core serialization library with ref struct reader/writer for minimal allocations
-- **TONL.SourceGenerator** - Roslyn-based source generator that generates serialization code at compile time
-- **TONL.Tests** - xUnit test project
-- **TONL.Benchmarks** - BenchmarkDotNet performance tests
+- **TONL.NET.Core** - Core serialization library with ref struct reader/writer for minimal allocations
+- **TONL.NET.SourceGenerator** - Roslyn-based source generator that generates serialization code at compile time
+- **TONL.NET.Tests** - xUnit test project
+- **TONL.NET.Benchmarks** - BenchmarkDotNet performance tests
 
 ### Key Types
 
@@ -47,7 +73,7 @@ TONL.NET is a high-performance serialization library for TONL (Token-Optimized N
 
 ### Dependencies
 
-- CommunityToolkit.HighPerformance (TONL.Core)
-- Microsoft.CodeAnalysis.CSharp (TONL.SourceGenerator)
-- xunit (TONL.Tests)
-- BenchmarkDotNet (TONL.Benchmarks)
+- CommunityToolkit.HighPerformance (TONL.NET.Core)
+- Microsoft.CodeAnalysis.CSharp (TONL.NET.SourceGenerator)
+- xunit (TONL.NET.Tests)
+- BenchmarkDotNet (TONL.NET.Benchmarks)

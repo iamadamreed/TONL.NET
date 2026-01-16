@@ -9,11 +9,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.14.*" />
+    <PackageReference Include="BenchmarkDotNet" Version="*" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\TONL.Core\TONL.Core.csproj" />
+    <ProjectReference Include="..\..\src\TONL.NET.Core\TONL.NET.Core.csproj" />
+    <ProjectReference Include="..\..\src\TONL.NET.SourceGenerator\TONL.NET.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

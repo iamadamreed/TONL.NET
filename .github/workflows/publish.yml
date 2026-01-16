@@ -1,22 +1,19 @@
-name: Publish
+name: CI
 
 on:
   push:
-    branches:
-      - main
-      - alpha
+    branches: [main, alpha]
+  pull_request:
+    branches: [main, alpha]
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
 
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for MinVer
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -25,63 +22,71 @@ jobs:
             9.0.x
             10.0.x
 
-      - name: Restore dependencies
+      - name: Restore
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --no-restore --configuration Release
+        run: dotnet build --no-restore -c Release
 
       - name: Test
-        run: dotnet test --no-build --configuration Release --verbosity normal
+        run: dotnet test --no-build -c Release
+
+  publish:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+
+      - name: Build
+        run: dotnet build -c Release
 
       - name: Calculate version
         id: version
         run: |
-          # Get MinVer calculated version and height
-          MINVER_VERSION=$(dotnet msbuild src/TONL.Core/TONL.Core.csproj -getProperty:Version -nologo)
-          MINVER_HEIGHT=$(dotnet msbuild src/TONL.Core/TONL.Core.csproj -getProperty:MinVerHeight -nologo)
-          # Default height to 0 if empty
+          MINVER_VERSION=$(dotnet msbuild src/TONL.NET.Core/TONL.NET.Core.csproj -getProperty:Version -nologo)
+          MINVER_HEIGHT=$(dotnet msbuild src/TONL.NET.Core/TONL.NET.Core.csproj -getProperty:MinVerHeight -nologo)
           MINVER_HEIGHT=${MINVER_HEIGHT:-0}
-          echo "MinVer version: $MINVER_VERSION (height: $MINVER_HEIGHT)"
 
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            # On main: strip pre-release suffix for stable release
-            STABLE_VERSION=$(echo "$MINVER_VERSION" | sed 's/-alpha\.[0-9.]*$//' | sed 's/-beta\.[0-9.]*$//' | sed 's/-rc\.[0-9.]*$//')
-            echo "VERSION=$STABLE_VERSION" >> $GITHUB_OUTPUT
+            VERSION=$(echo "$MINVER_VERSION" | sed 's/-alpha\.[0-9.]*$//' | sed 's/-beta\.[0-9.]*$//' | sed 's/-rc\.[0-9.]*$//')
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
             echo "IS_STABLE=true" >> $GITHUB_OUTPUT
-            echo "Stable version: $STABLE_VERSION"
           else
-            # On alpha: ensure version has -alpha suffix
-            if [[ "$MINVER_VERSION" == *"-alpha"* ]] || [[ "$MINVER_VERSION" == *"-beta"* ]] || [[ "$MINVER_VERSION" == *"-rc"* ]]; then
-              # Already has pre-release suffix
-              FINAL_VERSION="$MINVER_VERSION"
+            if [[ "$MINVER_VERSION" == *"-"* ]]; then
+              VERSION="$MINVER_VERSION"
             else
-              # Add -alpha.{height} suffix for alpha branch
-              FINAL_VERSION="${MINVER_VERSION}-alpha.${MINVER_HEIGHT}"
+              VERSION="${MINVER_VERSION}-alpha.${MINVER_HEIGHT}"
             fi
-            echo "VERSION=$FINAL_VERSION" >> $GITHUB_OUTPUT
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
             echo "IS_STABLE=false" >> $GITHUB_OUTPUT
-            echo "Alpha version: $FINAL_VERSION"
           fi
 
       - name: Pack
-        run: dotnet pack src/TONL.Core/TONL.Core.csproj --no-build --configuration Release -p:Version=${{ steps.version.outputs.VERSION }} --output ./nupkg
+        run: dotnet pack src/TONL.NET.Core/TONL.NET.Core.csproj --no-build -c Release -p:Version=${{ steps.version.outputs.VERSION }} -o ./nupkg
 
       - name: Push to GitHub Packages
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.GITHUB_TOKEN }} --source https://nuget.pkg.github.com/iamadamreed/index.json --skip-duplicate
 
-      - name: Create and push tag
+      - name: Tag release
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           TAG="v${{ steps.version.outputs.VERSION }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists, skipping"
-          else
-            git tag -a "$TAG" -m "Release $TAG"
-            git push origin "$TAG"
-            echo "Created and pushed tag $TAG"
-          fi
+          git tag -a "$TAG" -m "Release $TAG" 2>/dev/null && git push origin "$TAG" || echo "Tag $TAG exists"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -90,7 +95,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.version.outputs.VERSION }}
-          name: v${{ steps.version.outputs.VERSION }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
