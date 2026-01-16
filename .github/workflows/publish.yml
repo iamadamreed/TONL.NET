@@ -92,12 +92,23 @@ jobs:
           fi
 
       - name: Pack
-        run: dotnet pack src/TONL.NET.Core/TONL.NET.Core.csproj --no-build -c Release -p:Version=${{ steps.version.outputs.VERSION }} -o ./nupkg
+        run: dotnet pack src/TONL.NET.Core/TONL.NET.Core.csproj -c Release -p:MinVerVersionOverride=${{ steps.version.outputs.VERSION }} -o ./nupkg
 
       - name: Push to GitHub Packages
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.GITHUB_TOKEN }} --source https://nuget.pkg.github.com/iamadamreed/index.json --skip-duplicate
 
-      - name: Tag release
+      - name: Tag alpha release
+        if: github.ref == 'refs/heads/alpha'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="v${{ steps.version.outputs.VERSION }}"
+          git tag -a "$TAG" -m "Alpha release $TAG" 2>/dev/null && git push origin "$TAG" || echo "Tag $TAG exists"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag stable release
+        if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -107,7 +118,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
-        if: steps.version.outputs.IS_STABLE == 'true'
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.version.outputs.VERSION }}
