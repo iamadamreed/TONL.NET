@@ -6,7 +6,7 @@
 |--------|-------|
 | Best compression | **3.2x smaller** than JSON (tabular data) |
 | .NET 10 vs TypeScript | **4.6x faster** encode, **2.6x faster** decode |
-| Source generator benefit | **12-16% faster** than reflection |
+| Source generator benefit | **40-52% faster**, **62-64% less memory** |
 | TONL decode vs JSON decode | **Comparable** (within 4%) |
 
 ---
@@ -109,13 +109,13 @@
 | vs .NET 9 | **20% faster** | **15% faster** |
 | vs System.Text.Json | 2.1x slower | **1.04x faster** |
 
-### Source Generator vs Reflection
+### Source Generator vs Reflection (.NET 10)
 
-| Metric | Reflection | Source Gen | Improvement |
-|--------|------------|------------|-------------|
-| Encode (northwind) | 34.2 µs | 30.1 µs | **12% faster** |
-| Encode (small objects) | 2.7 µs | 2.3 µs | **16% faster** |
-| Memory (encode) | 53 KB | 45 KB | **15% less** |
+| Object Type | Reflection | Source Gen | Speed Improvement | Memory Improvement |
+|-------------|------------|------------|-------------------|-------------------|
+| Simple Record | 631 ns | 378 ns | **40% faster** | **64% less** (1,616 B → 576 B) |
+| Simple POCO | 619 ns | 368 ns | **41% faster** | **63% less** (1,544 B → 576 B) |
+| Large Record (20 props) | 1,796 ns | 860 ns | **52% faster** | **62% less** (3,240 B → 1,224 B) |
 
 ### Throughput (northwind.json)
 
@@ -140,7 +140,7 @@
 | Small unique objects | **JSON** — better compression |
 | Write-heavy workloads | **JSON** — faster encode |
 | Memory-constrained | **JSON** — lower allocations |
-| Known types at compile time | **Source Generator** — 12-16% faster |
+| Known types at compile time | **Source Generator** — 40-52% faster, 60%+ less memory |
 | AOT/trimming required | **Source Generator** — no reflection |
 
 ---

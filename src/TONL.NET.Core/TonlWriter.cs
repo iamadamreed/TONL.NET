@@ -406,6 +406,59 @@ public ref struct TonlWriter
     }
 
     /// <summary>
+    /// Writes a float value using G9 format for proper round-trip fidelity.
+    /// </summary>
+    public void WriteFloat(float value)
+    {
+        if (float.IsPositiveInfinity(value))
+        {
+            WriteRaw(InfinityLiteral);
+        }
+        else if (float.IsNegativeInfinity(value))
+        {
+            WriteRaw(NegInfinityLiteral);
+        }
+        else if (float.IsNaN(value))
+        {
+            WriteRaw(NaNLiteral);
+        }
+        else
+        {
+            // Use G9 format for float round-trip fidelity (not G17 which is for double)
+            WriteUtf8String(value.ToString("G9", CultureInfo.InvariantCulture));
+        }
+    }
+
+    /// <summary>
+    /// Writes a decimal value as string to preserve full 28-29 digit precision.
+    /// </summary>
+    public void WriteDecimal(decimal value)
+    {
+        // Decimal has 28-29 significant digits - serialize as string to preserve full precision
+        WriteUtf8String(value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Writes a float key-value pair: key: 3.14
+    /// </summary>
+    public void WriteKeyFloat(ReadOnlySpan<char> key, float value)
+    {
+        WriteKey(key);
+        WriteRaw(ColonSpace);
+        WriteFloat(value);
+    }
+
+    /// <summary>
+    /// Writes a decimal key-value pair: key: 123.456789
+    /// </summary>
+    public void WriteKeyDecimal(ReadOnlySpan<char> key, decimal value)
+    {
+        WriteKey(key);
+        WriteRaw(ColonSpace);
+        WriteDecimal(value);
+    }
+
+    /// <summary>
     /// Writes the delimiter character, optionally followed by a space.
     /// </summary>
     public void WriteDelimiter()

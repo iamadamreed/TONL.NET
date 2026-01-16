@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -11,9 +12,203 @@ namespace TONL.NET;
 /// </summary>
 public static class TonlSerializer
 {
+    #region Source-Generated Overloads (AOT-safe)
+
+    /// <summary>
+    /// Serializes a value using source-generated type info.
+    /// This is the preferred AOT-safe method for serialization.
+    /// </summary>
+    /// <typeparam name="T">The type to serialize.</typeparam>
+    /// <param name="writer">The buffer writer to write to.</param>
+    /// <param name="value">The value to serialize.</param>
+    /// <param name="typeInfo">The source-generated type info.</param>
+    /// <param name="options">Optional serialization options.</param>
+    public static void Serialize<T>(
+        IBufferWriter<byte> writer,
+        T value,
+        TonlTypeInfo<T> typeInfo,
+        TonlOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+
+        options ??= typeInfo.OriginatingContext?.Options ?? TonlOptions.Default;
+        options.Validate();
+
+        var tonlWriter = new TonlWriter(writer, options);
+        tonlWriter.WriteHeader();
+
+        // Use fast-path if available
+        if (typeInfo.Serialize is not null)
+        {
+            tonlWriter.WriteIndent(0);
+            tonlWriter.WriteObjectHeader("root", GetPropertyNames(typeInfo));
+            tonlWriter.WriteNewLine();
+            typeInfo.Serialize(ref tonlWriter, value);
+        }
+        else
+        {
+            // Fall back to metadata-based serialization
+            SerializeWithMetadata(ref tonlWriter, value, typeInfo, 0);
+        }
+
+        tonlWriter.Flush();
+    }
+
+    /// <summary>
+    /// Serializes a value to a TONL byte array using source-generated type info.
+    /// </summary>
+    public static byte[] SerializeToBytes<T>(T value, TonlTypeInfo<T> typeInfo, TonlOptions? options = null)
+    {
+        using var bufferWriter = new TonlBufferWriter(256);
+        Serialize(bufferWriter, value, typeInfo, options);
+        return bufferWriter.ToArray();
+    }
+
+    /// <summary>
+    /// Serializes a value to a TONL string using source-generated type info.
+    /// </summary>
+    public static string SerializeToString<T>(T value, TonlTypeInfo<T> typeInfo, TonlOptions? options = null)
+    {
+        using var bufferWriter = new TonlBufferWriter(256);
+        Serialize(bufferWriter, value, typeInfo, options);
+        return bufferWriter.ToString();
+    }
+
+    /// <summary>
+    /// Deserializes TONL data using source-generated type info.
+    /// </summary>
+    public static T? Deserialize<T>(ReadOnlySpan<byte> utf8Data, TonlTypeInfo<T> typeInfo, TonlOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+
+        var reader = new TonlReader(utf8Data, options ?? typeInfo.OriginatingContext?.Options);
+        reader.ParseHeaders();
+
+        // Use fast-path deserialize if available
+        if (typeInfo.Deserialize is not null)
+        {
+            return typeInfo.Deserialize(ref reader);
+        }
+
+        // Fall back to dictionary-based deserialization
+        var result = DeserializeDocument(ref reader, typeof(T));
+        if (result is T typedResult)
+        {
+            return typedResult;
+        }
+
+        return default;
+    }
+
+    /// <summary>
+    /// Deserializes a TONL string using source-generated type info.
+    /// </summary>
+    public static T? Deserialize<T>(string tonl, TonlTypeInfo<T> typeInfo, TonlOptions? options = null)
+    {
+        var bytes = Encoding.UTF8.GetBytes(tonl);
+        return Deserialize<T>(bytes, typeInfo, options);
+    }
+
+    private static string[] GetPropertyNames<T>(TonlTypeInfo<T> typeInfo)
+    {
+        if (typeInfo.Properties is null || typeInfo.Properties.Count == 0)
+        {
+            return [];
+        }
+
+        var names = new string[typeInfo.Properties.Count];
+        for (int i = 0; i < typeInfo.Properties.Count; i++)
+        {
+            names[i] = typeInfo.Properties[i].Name;
+        }
+        return names;
+    }
+
+    private static void SerializeWithMetadata<T>(
+        ref TonlWriter writer,
+        T value,
+        TonlTypeInfo<T> typeInfo,
+        int indent)
+    {
+        if (value is null)
+        {
+            writer.WriteIndent(indent);
+            writer.WriteKeyNull("root");
+            writer.WriteNewLine();
+            return;
+        }
+
+        if (typeInfo.Properties is null || typeInfo.Properties.Count == 0)
+        {
+            return;
+        }
+
+        var columns = GetPropertyNames(typeInfo);
+        writer.WriteIndent(indent);
+        writer.WriteObjectHeader("root", columns);
+        writer.WriteNewLine();
+
+        foreach (var prop in typeInfo.Properties)
+        {
+            var propValue = prop.GetValue(value);
+            writer.WriteIndent(indent + 1);
+
+            if (propValue is null)
+            {
+                writer.WriteKeyNull(prop.Name);
+            }
+            else if (propValue is bool b)
+            {
+                writer.WriteKeyBoolean(prop.Name, b);
+            }
+            else if (propValue is int i)
+            {
+                writer.WriteKeyInt32(prop.Name, i);
+            }
+            else if (propValue is long l)
+            {
+                writer.WriteKeyInt64(prop.Name, l);
+            }
+            else if (propValue is double d)
+            {
+                writer.WriteKeyDouble(prop.Name, d);
+            }
+            else if (propValue is float f)
+            {
+                writer.WriteKeyDouble(prop.Name, f);
+            }
+            else if (propValue is string s)
+            {
+                writer.WriteKeyValue(prop.Name, s);
+            }
+            else
+            {
+                writer.WriteKeyValue(prop.Name, propValue.ToString() ?? "");
+            }
+
+            writer.WriteNewLine();
+        }
+    }
+
+    #endregion
+
+    #region Reflection-Based Methods
+
+    private const string ReflectionSerializationMessage =
+        "Reflection-based serialization is not compatible with trimming or AOT. Use the TonlTypeInfo<T> overload with source generation instead.";
+
+    private const string ReflectionDeserializationMessage =
+        "Reflection-based deserialization is not compatible with trimming or AOT. Use the TonlTypeInfo<T> overload with source generation instead.";
+
     /// <summary>
     /// Serializes an object to TONL format and writes to the specified buffer writer.
     /// </summary>
+    /// <remarks>
+    /// This method uses reflection and is not AOT-compatible. For AOT scenarios,
+    /// use the overload that accepts <see cref="TonlTypeInfo{T}"/>.
+    /// </remarks>
+    [RequiresUnreferencedCode(ReflectionSerializationMessage)]
+    [RequiresDynamicCode(ReflectionSerializationMessage)]
     public static void Serialize<T>(IBufferWriter<byte> writer, T value, TonlOptions? options = null)
     {
         options ??= TonlOptions.Default;
@@ -31,6 +226,8 @@ public static class TonlSerializer
     /// <summary>
     /// Serializes an object to a TONL byte array.
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionSerializationMessage)]
+    [RequiresDynamicCode(ReflectionSerializationMessage)]
     public static byte[] SerializeToBytes<T>(T value, TonlOptions? options = null)
     {
         using var bufferWriter = new TonlBufferWriter(256);
@@ -41,6 +238,8 @@ public static class TonlSerializer
     /// <summary>
     /// Serializes an object to a TONL string.
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionSerializationMessage)]
+    [RequiresDynamicCode(ReflectionSerializationMessage)]
     public static string SerializeToString<T>(T value, TonlOptions? options = null)
     {
         using var bufferWriter = new TonlBufferWriter(256);
@@ -51,6 +250,8 @@ public static class TonlSerializer
     /// <summary>
     /// Deserializes a TONL byte span to an object.
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionDeserializationMessage)]
+    [RequiresDynamicCode(ReflectionDeserializationMessage)]
     public static T? Deserialize<T>(ReadOnlySpan<byte> utf8Data, TonlOptions? options = null)
     {
         var reader = new TonlReader(utf8Data, options);
@@ -69,6 +270,8 @@ public static class TonlSerializer
     /// <summary>
     /// Deserializes a TONL string to an object.
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionDeserializationMessage)]
+    [RequiresDynamicCode(ReflectionDeserializationMessage)]
     public static T? Deserialize<T>(string tonl, TonlOptions? options = null)
     {
         var bytes = Encoding.UTF8.GetBytes(tonl);
@@ -78,6 +281,8 @@ public static class TonlSerializer
     /// <summary>
     /// Deserializes TONL data to a dictionary structure (untyped).
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionDeserializationMessage)]
+    [RequiresDynamicCode(ReflectionDeserializationMessage)]
     public static Dictionary<string, object?>? DeserializeToDictionary(ReadOnlySpan<byte> utf8Data, TonlOptions? options = null)
     {
         return Deserialize<Dictionary<string, object?>>(utf8Data, options);
@@ -86,6 +291,8 @@ public static class TonlSerializer
     /// <summary>
     /// Deserializes TONL data to a dictionary structure (untyped).
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionDeserializationMessage)]
+    [RequiresDynamicCode(ReflectionDeserializationMessage)]
     public static Dictionary<string, object?>? DeserializeToDictionary(string tonl, TonlOptions? options = null)
     {
         return Deserialize<Dictionary<string, object?>>(tonl, options);
@@ -506,11 +713,11 @@ public static class TonlSerializer
         }
         else if (value is float f)
         {
-            writer.WriteKeyDouble(key, f);
+            writer.WriteKeyFloat(key, f);
         }
         else if (value is decimal dec)
         {
-            writer.WriteKeyDouble(key, (double)dec);
+            writer.WriteKeyDecimal(key, dec);
         }
         else if (value is string s)
         {
@@ -546,11 +753,11 @@ public static class TonlSerializer
         }
         else if (value is float f)
         {
-            writer.WriteDouble(f);
+            writer.WriteFloat(f);
         }
         else if (value is decimal dec)
         {
-            writer.WriteDouble((double)dec);
+            writer.WriteDecimal(dec);
         }
         else if (value is string s)
         {
@@ -1064,4 +1271,5 @@ public static class TonlSerializer
         return -1;
     }
 
+    #endregion
 }
