@@ -443,7 +443,7 @@ public class TonlSourceGenerator : IIncrementalGenerator
         SerializableTypeInfo typeInfo)
     {
         var code = CodeGenerator.GenerateSerializer(typeInfo);
-        var hintName = $"{typeInfo.TypeName}.Tonl.g.cs";
+        var hintName = $"{typeInfo.SafePropertyName}.Tonl.g.cs";
 
         context.AddSource(hintName, SourceText.From(code, Encoding.UTF8));
     }
@@ -620,7 +620,7 @@ public class TonlSourceGenerator : IIncrementalGenerator
             if (!typeInfo.IsPrimitive && (typeInfo.CanInstantiate || typeInfo.IsRecord))
             {
                 var serializerCode = CodeGenerator.GenerateSerializer(typeInfo);
-                var serializerHintName = $"{typeInfo.TypeName}.Tonl.g.cs";
+                var serializerHintName = $"{typeInfo.SafePropertyName}.Tonl.g.cs";
                 context.AddSource(serializerHintName, SourceText.From(serializerCode, Encoding.UTF8));
             }
         }
