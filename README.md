@@ -75,40 +75,88 @@ while (reader.Read())
 }
 ```
 
-### Source Generator
+### Source Generator (AOT-Compatible)
 
-For optimal performance, use the source generator to eliminate runtime reflection:
+For optimal performance and AOT compatibility, use the context-based source generator pattern (similar to System.Text.Json):
 
 ```csharp
 using TONL.NET;
 
-// Mark your types with [TonlSerializable]
-[TonlSerializable]
+// 1. Define your types
 public record User(int Id, string Name, bool IsActive);
+public class Order { public int OrderId { get; set; } public decimal Total { get; set; } }
 
-// Generated serializer provides typed, reflection-free operations
+// 2. Create a serializer context
+[TonlSourceGenerationOptions]
+[TonlSerializable(typeof(User))]
+[TonlSerializable(typeof(Order))]
+public partial class AppTonlContext : TonlSerializerContext { }
+
+// 3. Serialize using the generated context
 var user = new User(1, "Alice", true);
 
-// Serialize to dictionary (for further processing)
-Dictionary<string, object?> dict = UserTonlSerializer.Serialize(user);
+// Serialize to string
+string tonl = TonlSerializer.SerializeToString(user, AppTonlContext.Default.User);
 
-// Serialize directly to TONL string
-string tonl = UserTonlSerializer.SerializeToString(user);
+// Serialize to bytes
+byte[] bytes = TonlSerializer.SerializeToBytes(user, AppTonlContext.Default.User);
 
-// Deserialize from dictionary
-User restored = UserTonlSerializer.Deserialize(dict);
+// Serialize to IBufferWriter<byte>
+TonlSerializer.Serialize(bufferWriter, user, AppTonlContext.Default.User);
+
+// Deserialize from string
+User? restored = TonlSerializer.Deserialize(tonl, AppTonlContext.Default.User);
+
+// Deserialize from bytes
+User? fromBytes = TonlSerializer.Deserialize<User>(bytes, AppTonlContext.Default.User);
 ```
 
-The source generator creates a `{TypeName}TonlSerializer` class with:
-- `Serialize(T value)` → `Dictionary<string, object?>`
-- `SerializeToString(T value, TonlOptions?)` → `string`
-- `Deserialize(Dictionary<string, object?>)` → `T`
+**Context Pattern:**
+- Create a `partial class` inheriting from `TonlSerializerContext`
+- Mark with `[TonlSourceGenerationOptions]` to enable generation
+- Add `[TonlSerializable(typeof(T))]` for each type to serialize
+- Access generated type info via `ContextName.Default.TypeName`
+
+**Configuration Options:**
+```csharp
+[TonlSourceGenerationOptions(
+    GenerationMode = TonlSourceGenerationMode.Default, // Default, Metadata, or Serialization
+    Delimiter = ',',
+    PrettyDelimiters = false)]
+public partial class AppTonlContext : TonlSerializerContext { }
+```
 
 **Benefits:**
-- 11-18% faster serialization than reflection
+- Zero runtime reflection - fully AOT compatible
+- 40-52% faster serialization than reflection mode
+- 62-64% less memory allocation
 - Compile-time error checking
-- AOT/trimming compatible
+- Native AOT and trimming safe
 - Supports records, classes, and structs
+
+### Reflection vs Source Generation
+
+TONL.NET provides two serialization paths:
+
+| Feature | Source Generated | Reflection |
+|---------|------------------|------------|
+| API | `TonlSerializer.Serialize(value, Context.Default.Type)` | `TonlSerializer.Serialize(value)` |
+| AOT Compatible | Yes | No |
+| Trimming Safe | Yes | No |
+| Performance | Fastest | 40-52% slower |
+| Memory | Lowest | 62-64% more |
+| Setup Required | Context class + attributes | None |
+
+**Use source generation** for:
+- Production applications
+- AOT/Native compilation
+- Performance-critical paths
+- Libraries targeting AOT consumers
+
+**Reflection is acceptable** for:
+- Prototyping and development
+- Dynamic scenarios (unknown types at compile time)
+- Simple scripts and tools
 
 ## Performance
 
