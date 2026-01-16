@@ -468,8 +468,11 @@ public class TonlSourceGenerator : IIncrementalGenerator
             }
         }
 
-        // Collect all [TonlSerializable(typeof(T))] attributes
+        // Collect all [TonlSerializable(typeof(T))] attributes and their symbols
         var types = new List<SerializableTypeInfo>();
+        var typeSymbols = new List<INamedTypeSymbol>();
+        var registeredTypeNames = new HashSet<string>();
+
         foreach (var attr in contextSymbol.GetAttributes())
         {
             if (attr.AttributeClass?.ToDisplayString() == TonlSerializableAttribute &&
@@ -478,11 +481,17 @@ public class TonlSourceGenerator : IIncrementalGenerator
             {
                 var typeInfo = ExtractTypeInfoFromSymbol(targetType, attr);
                 types.Add(typeInfo);
+                typeSymbols.Add(targetType);
+                registeredTypeNames.Add(typeInfo.FullyQualifiedName);
             }
         }
 
         if (types.Count == 0)
             return null;
+
+        // Recursively discover referenced types (element types, nested object types)
+        // that need serializers generated
+        DiscoverReferencedTypes(types, typeSymbols, registeredTypeNames);
 
         var namespaceName = contextSymbol.ContainingNamespace.IsGlobalNamespace
             ? null
@@ -494,6 +503,123 @@ public class TonlSourceGenerator : IIncrementalGenerator
             Namespace: namespaceName,
             GenerationMode: generationMode,
             Types: types.ToImmutableArray());
+    }
+
+    /// <summary>
+    /// Recursively discovers types referenced by properties (element types, nested objects)
+    /// and adds them to the types list if they need serializers generated.
+    /// </summary>
+    private static void DiscoverReferencedTypes(
+        List<SerializableTypeInfo> types,
+        List<INamedTypeSymbol> typeSymbols,
+        HashSet<string> registeredTypeNames)
+    {
+        // Keep discovering until no new types are found
+        var symbolsToProcess = new Queue<INamedTypeSymbol>(typeSymbols);
+
+        while (symbolsToProcess.Count > 0)
+        {
+            var typeSymbol = symbolsToProcess.Dequeue();
+
+            // Get all public properties of this type
+            var properties = typeSymbol
+                .GetMembers()
+                .OfType<IPropertySymbol>()
+                .Where(p => p.DeclaredAccessibility == Accessibility.Public &&
+                            p.GetMethod != null &&
+                            !p.IsIndexer &&
+                            !p.IsStatic);
+
+            foreach (var prop in properties)
+            {
+                var propType = prop.Type;
+                var category = GetPropertyCategory(propType);
+
+                // Check for collection element types
+                if (category == PropertyCategory.Collection)
+                {
+                    var elementSymbol = GetCollectionElementSymbol(propType);
+                    if (elementSymbol != null)
+                    {
+                        var elementCategory = GetPropertyCategory(elementSymbol);
+                        if (elementCategory == PropertyCategory.Object)
+                        {
+                            TryAddDiscoveredType(elementSymbol, types, typeSymbols, registeredTypeNames, symbolsToProcess);
+                        }
+                    }
+                }
+                // Check for nested object properties
+                else if (category == PropertyCategory.Object && propType is INamedTypeSymbol objectSymbol)
+                {
+                    TryAddDiscoveredType(objectSymbol, types, typeSymbols, registeredTypeNames, symbolsToProcess);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the element type symbol from a collection type.
+    /// </summary>
+    private static INamedTypeSymbol? GetCollectionElementSymbol(ITypeSymbol type)
+    {
+        // Handle arrays
+        if (type is IArrayTypeSymbol arrayType)
+        {
+            return arrayType.ElementType as INamedTypeSymbol;
+        }
+
+        // Handle generic collections
+        if (type is INamedTypeSymbol namedType && namedType.IsGenericType)
+        {
+            var typeArgs = namedType.TypeArguments;
+
+            // Dictionary types have 2 type arguments - get the value type
+            if (IsDictionaryType(type) && typeArgs.Length == 2)
+            {
+                return typeArgs[1] as INamedTypeSymbol;
+            }
+
+            // Other collections (List<T>, IEnumerable<T>, etc.) have 1 type argument
+            if (typeArgs.Length >= 1)
+            {
+                return typeArgs[0] as INamedTypeSymbol;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Tries to add a discovered type to the types list if it's not already registered.
+    /// </summary>
+    private static void TryAddDiscoveredType(
+        INamedTypeSymbol typeSymbol,
+        List<SerializableTypeInfo> types,
+        List<INamedTypeSymbol> typeSymbols,
+        HashSet<string> registeredTypeNames,
+        Queue<INamedTypeSymbol> symbolsToProcess)
+    {
+        var fullName = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        // Skip if already registered, or if it's a primitive/system type
+        if (registeredTypeNames.Contains(fullName))
+            return;
+
+        // Skip interfaces and abstract classes
+        if (typeSymbol.TypeKind == TypeKind.Interface || typeSymbol.IsAbstract)
+            return;
+
+        // Skip system types and primitives
+        var ns = typeSymbol.ContainingNamespace?.ToDisplayString() ?? "";
+        if (ns.StartsWith("System") && !ns.StartsWith("System.Collections"))
+            return;
+
+        // Extract type info and add to the list
+        var typeInfo = ExtractTypeInfoFromSymbol(typeSymbol, null);
+        types.Add(typeInfo);
+        typeSymbols.Add(typeSymbol);
+        registeredTypeNames.Add(fullName);
+        symbolsToProcess.Enqueue(typeSymbol);
     }
 
     private static SerializableTypeInfo ExtractTypeInfoFromSymbol(INamedTypeSymbol typeSymbol, AttributeData? attr)
