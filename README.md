@@ -112,7 +112,7 @@ The source generator creates a `{TypeName}TonlSerializer` class with:
 
 ## Performance
 
-Benchmarks run on Apple M4 Pro (14 cores), .NET 10.0.
+Benchmarks run on Apple M4 Pro (14 cores), .NET 10.0. See [detailed benchmark results](docs/BENCHMARKS.md) for full analysis.
 
 ### vs System.Text.Json
 
