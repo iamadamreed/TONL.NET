@@ -193,9 +193,22 @@ public static class TonlSerializer
     #endregion
 
     #region Reflection-Based Methods
+
+    private const string ReflectionSerializationMessage =
+        "Reflection-based serialization is not compatible with trimming or AOT. Use the TonlTypeInfo<T> overload with source generation instead.";
+
+    private const string ReflectionDeserializationMessage =
+        "Reflection-based deserialization is not compatible with trimming or AOT. Use the TonlTypeInfo<T> overload with source generation instead.";
+
     /// <summary>
     /// Serializes an object to TONL format and writes to the specified buffer writer.
     /// </summary>
+    /// <remarks>
+    /// This method uses reflection and is not AOT-compatible. For AOT scenarios,
+    /// use the overload that accepts <see cref="TonlTypeInfo{T}"/>.
+    /// </remarks>
+    [RequiresUnreferencedCode(ReflectionSerializationMessage)]
+    [RequiresDynamicCode(ReflectionSerializationMessage)]
     public static void Serialize<T>(IBufferWriter<byte> writer, T value, TonlOptions? options = null)
     {
         options ??= TonlOptions.Default;
@@ -213,6 +226,8 @@ public static class TonlSerializer
     /// <summary>
     /// Serializes an object to a TONL byte array.
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionSerializationMessage)]
+    [RequiresDynamicCode(ReflectionSerializationMessage)]
     public static byte[] SerializeToBytes<T>(T value, TonlOptions? options = null)
     {
         using var bufferWriter = new TonlBufferWriter(256);
@@ -223,6 +238,8 @@ public static class TonlSerializer
     /// <summary>
     /// Serializes an object to a TONL string.
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionSerializationMessage)]
+    [RequiresDynamicCode(ReflectionSerializationMessage)]
     public static string SerializeToString<T>(T value, TonlOptions? options = null)
     {
         using var bufferWriter = new TonlBufferWriter(256);
@@ -233,6 +250,8 @@ public static class TonlSerializer
     /// <summary>
     /// Deserializes a TONL byte span to an object.
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionDeserializationMessage)]
+    [RequiresDynamicCode(ReflectionDeserializationMessage)]
     public static T? Deserialize<T>(ReadOnlySpan<byte> utf8Data, TonlOptions? options = null)
     {
         var reader = new TonlReader(utf8Data, options);
@@ -251,6 +270,8 @@ public static class TonlSerializer
     /// <summary>
     /// Deserializes a TONL string to an object.
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionDeserializationMessage)]
+    [RequiresDynamicCode(ReflectionDeserializationMessage)]
     public static T? Deserialize<T>(string tonl, TonlOptions? options = null)
     {
         var bytes = Encoding.UTF8.GetBytes(tonl);
@@ -260,6 +281,8 @@ public static class TonlSerializer
     /// <summary>
     /// Deserializes TONL data to a dictionary structure (untyped).
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionDeserializationMessage)]
+    [RequiresDynamicCode(ReflectionDeserializationMessage)]
     public static Dictionary<string, object?>? DeserializeToDictionary(ReadOnlySpan<byte> utf8Data, TonlOptions? options = null)
     {
         return Deserialize<Dictionary<string, object?>>(utf8Data, options);
@@ -268,6 +291,8 @@ public static class TonlSerializer
     /// <summary>
     /// Deserializes TONL data to a dictionary structure (untyped).
     /// </summary>
+    [RequiresUnreferencedCode(ReflectionDeserializationMessage)]
+    [RequiresDynamicCode(ReflectionDeserializationMessage)]
     public static Dictionary<string, object?>? DeserializeToDictionary(string tonl, TonlOptions? options = null)
     {
         return Deserialize<Dictionary<string, object?>>(tonl, options);
