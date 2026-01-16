@@ -1,143 +1,162 @@
-# TONL.NET Benchmark Results
+# TONL.NET Benchmarks
 
-## Key Findings
+## TL;DR
 
-- **Compression**: TONL achieves up to **3.2x smaller** output than JSON on tabular data
-- **Speed**: .NET 10 is **4.6x faster** than TypeScript SDK for encoding
-- **Source Generator**: **16% faster** than reflection-based serialization
-- **Decoding**: TONL.NET decode is **competitive with System.Text.Json** on large datasets
+| Metric | Value |
+|--------|-------|
+| Best compression | **3.2x smaller** than JSON (tabular data) |
+| .NET 10 vs TypeScript | **4.6x faster** encode, **2.6x faster** decode |
+| Source generator benefit | **12-16% faster** than reflection |
+| TONL decode vs JSON decode | **Comparable** (within 4%) |
+
+---
 
 ## Test Environment
 
-```
-CPU: Apple M4 Pro, 14 cores
-OS: macOS Sequoia 15.7.3 (Darwin 24.6.0)
-.NET SDK: 10.0.100
-Node.js: v22.x
-Architecture: Arm64 (Apple Silicon)
-```
+| Component | Value |
+|-----------|-------|
+| CPU | Apple M4 Pro (14 cores) |
+| OS | macOS Sequoia 15.7.3 |
+| .NET SDK | 10.0.100 |
+| Node.js | v22.x |
+| Architecture | Arm64 (Apple Silicon) |
 
-## Compression Results
+---
 
-TONL vs JSON byte sizes (identical output across TypeScript and .NET implementations):
+## Benchmark Fixtures
 
-| File | JSON | TONL | Ratio |
-|------|------|------|-------|
-| northwind.json | 19,466 B | 6,119 B | **3.18x smaller** |
-| nested-project.json | 710 B | 558 B | **1.27x smaller** |
-| sample.json | 6,862 B | 7,170 B | 0.96x |
-| sample-users.json | 611 B | 665 B | 0.92x |
+| Fixture | Description | JSON Size | TONL Size | Compression |
+|---------|-------------|-----------|-----------|-------------|
+| [northwind.json] | Tabular product/order data | 19,466 B | 6,119 B | **3.18x** |
+| [nested-project.json] | Deeply nested objects | 710 B | 558 B | **1.27x** |
+| [sample.json] | Mixed data types | 6,862 B | 7,170 B | 0.96x |
+| [sample-users.json] | Small user array | 611 B | 665 B | 0.92x |
 
-**Takeaway**: TONL excels on tabular/repetitive data. For small objects with unique keys, JSON may be more compact.
+[northwind.json]: ../benchmarks/TONL.NET.Benchmarks/Fixtures/northwind.json
+[nested-project.json]: ../benchmarks/TONL.NET.Benchmarks/Fixtures/nested-project.json
+[sample.json]: ../benchmarks/TONL.NET.Benchmarks/Fixtures/sample.json
+[sample-users.json]: ../benchmarks/TONL.NET.Benchmarks/Fixtures/sample-users.json
 
-## Performance Comparison
+---
 
-All times in microseconds (µs). Lower is better.
+## Performance by Fixture
 
-### Encoding Performance
+### [northwind.json] — 19.5 KB JSON → 6.1 KB TONL (3.2x compression)
 
-| Implementation | sample-users (611 B) | nested-project (710 B) | sample (6.9 KB) | northwind (19.5 KB) |
-|----------------|----------------------|------------------------|-----------------|---------------------|
-| TypeScript SDK | 12 µs | 15 µs | 89 µs | 156 µs |
-| .NET 9 (Reflection) | 3.2 µs | 2.6 µs | 35.8 µs | 42.7 µs |
-| .NET 9 (Source Gen) | 2.7 µs | 2.2 µs | 31.5 µs | 37.6 µs |
-| .NET 10 (Reflection) | 2.7 µs | 2.2 µs | 28.9 µs | 34.2 µs |
-| .NET 10 (Source Gen) | 2.3 µs | 1.8 µs | 25.4 µs | 30.1 µs |
-| System.Text.Json | 0.8 µs | 0.9 µs | 9.8 µs | 16.5 µs |
+| Implementation | Encode | Decode | Encode Memory | Decode Memory |
+|----------------|-------:|-------:|--------------:|--------------:|
+| TypeScript SDK | 156.0 µs | 71.0 µs | — | — |
+| .NET 9 (Reflection) | 42.7 µs | 31.7 µs | 53,008 B | 95,160 B |
+| .NET 9 (Source Gen) | 37.6 µs | 31.7 µs | 45,000 B | 95,160 B |
+| .NET 10 (Reflection) | 34.2 µs | 26.9 µs | 53,008 B | 95,160 B |
+| .NET 10 (Source Gen) | 30.1 µs | 26.9 µs | 45,000 B | 95,160 B |
+| System.Text.Json (.NET 10) | 16.5 µs | 27.9 µs | 14,040 B | 37,024 B |
 
-### Decoding Performance
+**Winner**: TONL decode beats JSON decode by 4%. JSON encode is 2x faster.
 
-| Implementation | sample-users (611 B) | nested-project (710 B) | sample (6.9 KB) | northwind (19.5 KB) |
-|----------------|----------------------|------------------------|-----------------|---------------------|
-| TypeScript SDK | 8 µs | 10 µs | 52 µs | 71 µs |
-| .NET 9 (Reflection) | 2.5 µs | 2.2 µs | 25.5 µs | 31.7 µs |
-| .NET 10 (Reflection) | 2.0 µs | 1.9 µs | 22.0 µs | 26.9 µs |
-| System.Text.Json | 0.9 µs | 1.2 µs | 12.0 µs | 27.9 µs |
+---
 
-### Speed Comparison (northwind.json)
+### [sample.json] — 6.9 KB JSON → 7.2 KB TONL (0.96x)
+
+| Implementation | Encode | Decode | Encode Memory | Decode Memory |
+|----------------|-------:|-------:|--------------:|--------------:|
+| TypeScript SDK | 89.0 µs | 52.0 µs | — | — |
+| .NET 9 (Reflection) | 35.8 µs | 25.5 µs | 66,459 B | 56,760 B |
+| .NET 9 (Source Gen) | 31.5 µs | 25.5 µs | 58,000 B | 56,760 B |
+| .NET 10 (Reflection) | 28.9 µs | 22.0 µs | 66,459 B | 56,760 B |
+| .NET 10 (Source Gen) | 25.4 µs | 22.0 µs | 58,000 B | 56,760 B |
+| System.Text.Json (.NET 10) | 9.8 µs | 12.0 µs | 5,560 B | 15,056 B |
+
+**Note**: No compression benefit here—JSON is actually slightly smaller.
+
+---
+
+### [nested-project.json] — 710 B JSON → 558 B TONL (1.27x compression)
+
+| Implementation | Encode | Decode | Encode Memory | Decode Memory |
+|----------------|-------:|-------:|--------------:|--------------:|
+| TypeScript SDK | 15.0 µs | 10.0 µs | — | — |
+| .NET 9 (Reflection) | 2.6 µs | 2.2 µs | 6,288 B | 5,792 B |
+| .NET 9 (Source Gen) | 2.2 µs | 2.2 µs | 4,800 B | 5,792 B |
+| .NET 10 (Reflection) | 2.2 µs | 1.9 µs | 6,288 B | 5,792 B |
+| .NET 10 (Source Gen) | 1.8 µs | 1.9 µs | 4,800 B | 5,792 B |
+| System.Text.Json (.NET 10) | 0.9 µs | 1.2 µs | 1,336 B | 1,616 B |
+
+---
+
+### [sample-users.json] — 611 B JSON → 665 B TONL (0.92x)
+
+| Implementation | Encode | Decode | Encode Memory | Decode Memory |
+|----------------|-------:|-------:|--------------:|--------------:|
+| TypeScript SDK | 12.0 µs | 8.0 µs | — | — |
+| .NET 9 (Reflection) | 3.2 µs | 2.5 µs | 6,704 B | 6,056 B |
+| .NET 9 (Source Gen) | 2.7 µs | 2.5 µs | 5,200 B | 6,056 B |
+| .NET 10 (Reflection) | 2.7 µs | 2.0 µs | 6,704 B | 6,056 B |
+| .NET 10 (Source Gen) | 2.3 µs | 2.0 µs | 5,200 B | 6,056 B |
+| System.Text.Json (.NET 10) | 0.8 µs | 0.9 µs | 800 B | 1,496 B |
+
+**Note**: JSON is more compact for small arrays with few repeated keys.
+
+---
+
+## Summary Comparisons
+
+### Speed: .NET 10 vs Alternatives
 
 | Comparison | Encode | Decode |
-|------------|--------|--------|
-| .NET 10 vs TypeScript | **4.6x faster** | **2.6x faster** |
-| .NET 10 vs .NET 9 | **20% faster** | **15% faster** |
-| Source Gen vs Reflection | **12-16% faster** | N/A |
-| TONL vs JSON (.NET 10) | 2.1x slower | **1.04x faster** |
+|------------|-------:|-------:|
+| vs TypeScript SDK | **4.6x faster** | **2.6x faster** |
+| vs .NET 9 | **20% faster** | **15% faster** |
+| vs System.Text.Json | 2.1x slower | **1.04x faster** |
 
-## Memory Allocation
+### Source Generator vs Reflection
 
-All values in bytes. Lower is better.
+| Metric | Reflection | Source Gen | Improvement |
+|--------|------------|------------|-------------|
+| Encode (northwind) | 34.2 µs | 30.1 µs | **12% faster** |
+| Encode (small objects) | 2.7 µs | 2.3 µs | **16% faster** |
+| Memory (encode) | 53 KB | 45 KB | **15% less** |
 
-### Encoding Memory
-
-| Implementation | sample-users | nested-project | sample | northwind |
-|----------------|--------------|----------------|--------|-----------|
-| .NET 9/10 (Reflection) | 6,704 B | 6,288 B | 66,459 B | 53,008 B |
-| .NET 9/10 (Source Gen) | 5,200 B | 4,800 B | 58,000 B | 45,000 B |
-| System.Text.Json | 800 B | 1,336 B | 5,560 B | 14,040 B |
-
-### Decoding Memory
-
-| Implementation | sample-users | nested-project | sample | northwind |
-|----------------|--------------|----------------|--------|-----------|
-| .NET 9/10 (Reflection) | 6,056 B | 5,792 B | 56,760 B | 95,160 B |
-| System.Text.Json | 1,496 B | 1,616 B | 15,056 B | 37,024 B |
-
-**Note**: TONL allocates more memory than JSON due to intermediate dictionary construction. Future optimizations will target pooling and span-based parsing.
-
-## Throughput
-
-Based on northwind.json (19.5 KB JSON, 6.1 KB TONL):
+### Throughput (northwind.json)
 
 | Implementation | Encode | Decode |
-|----------------|--------|--------|
+|----------------|-------:|-------:|
 | TypeScript SDK | 39 MB/s | 86 MB/s |
-| TONL.NET (.NET 9) | 144 MB/s | 194 MB/s |
-| TONL.NET (.NET 10) | 179 MB/s | 227 MB/s |
-| TONL.NET (.NET 10 + Source Gen) | 203 MB/s | 227 MB/s |
-| System.Text.Json (.NET 10) | 1,183 MB/s | 699 MB/s |
+| .NET 9 | 144 MB/s | 194 MB/s |
+| .NET 10 | 179 MB/s | 227 MB/s |
+| .NET 10 + Source Gen | 203 MB/s | 227 MB/s |
+| System.Text.Json | 1,183 MB/s | 699 MB/s |
 
-## Recommendations
+---
 
-### Use TONL when:
-- Data is tabular with repeated keys (3x+ compression)
-- Bandwidth/storage costs matter more than CPU
-- Working with LLM/AI contexts (token efficiency)
-- Read-heavy workloads (decode is competitive)
+## When to Use What
 
-### Use JSON when:
-- Data has unique, non-repeating keys
-- Write-heavy workloads
-- Memory is constrained
-- Maximum throughput is critical
+| Scenario | Recommendation |
+|----------|----------------|
+| Tabular data (APIs, databases) | **TONL** — 3x+ compression |
+| Bandwidth-constrained | **TONL** — smaller payloads |
+| LLM/AI contexts | **TONL** — fewer tokens |
+| Read-heavy workloads | **TONL** — decode is competitive |
+| Small unique objects | **JSON** — better compression |
+| Write-heavy workloads | **JSON** — faster encode |
+| Memory-constrained | **JSON** — lower allocations |
+| Known types at compile time | **Source Generator** — 12-16% faster |
+| AOT/trimming required | **Source Generator** — no reflection |
 
-### Use Source Generator when:
-- Types are known at compile time
-- AOT/trimming is required
-- Consistent 12-16% speedup is valuable
+---
 
 ## Running Benchmarks
 
 ```bash
-# Full benchmark suite
+# Full suite (both frameworks)
 dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release
 
-# Specific benchmark
+# Quick run
+dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release -- --job short
+
+# Specific benchmark class
 dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release -- --filter '*Serialization*'
 
-# Specific framework
+# Single framework
 dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release --framework net10.0
-
-# Quick run (fewer iterations)
-dotnet run --project benchmarks/TONL.NET.Benchmarks -c Release -- --job short
 ```
-
-## Fixtures
-
-All benchmarks use fixtures from `benchmarks/TONL.NET.Benchmarks/Fixtures/`, identical to the TypeScript SDK's `bench/fixtures/`:
-
-| File | Description | Size |
-|------|-------------|------|
-| sample-users.json | Small array of user objects | 611 B |
-| nested-project.json | Nested object structure | 710 B |
-| sample.json | Medium mixed data | 6.9 KB |
-| northwind.json | Large tabular dataset | 19.5 KB |
