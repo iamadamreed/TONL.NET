@@ -1,10 +1,15 @@
-name: CI
+name: CI/CD
 
 on:
   push:
     branches: [main, alpha]
+    tags: ['v*']
   pull_request:
     branches: [main, alpha]
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
   build:
@@ -22,6 +27,13 @@ jobs:
             9.0.x
             10.0.x
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
       - name: Restore
         run: dotnet restore
 
@@ -29,10 +41,38 @@ jobs:
         run: dotnet build --no-restore -c Release
 
       - name: Test
-        run: dotnet test --no-build -c Release
+        run: dotnet test --no-build -c Release --logger trx --results-directory TestResults
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: TestResults
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            src/*/bin/Release/
+            src/*/obj/Release/
+          retention-days: 1
 
   aot-test:
-    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: macos-latest
+            rid: osx-arm64
+          - os: windows-latest
+            rid: win-x64
+
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -41,19 +81,33 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
-      - name: Publish AOT binary
-        run: dotnet publish tests/TONL.NET.AotTests -c Release -r linux-x64
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
 
-      - name: Run AOT binary
-        run: ./tests/TONL.NET.AotTests/bin/Release/net9.0/linux-x64/publish/TONL.NET.AotTests
+      - name: Publish AOT binary
+        run: dotnet publish tests/TONL.NET.AotTests -c Release -r ${{ matrix.rid }}
+
+      - name: Run AOT binary (Unix)
+        if: runner.os != 'Windows'
+        run: ./tests/TONL.NET.AotTests/bin/Release/net9.0/${{ matrix.rid }}/publish/TONL.NET.AotTests
+
+      - name: Run AOT binary (Windows)
+        if: runner.os == 'Windows'
+        run: ./tests/TONL.NET.AotTests/bin/Release/net9.0/${{ matrix.rid }}/publish/TONL.NET.AotTests.exe
 
   publish:
     needs: [build, aot-test]
-    if: github.event_name == 'push'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
+      id-token: write
+      attestations: write
 
     steps:
       - uses: actions/checkout@v4
@@ -67,80 +121,38 @@ jobs:
             9.0.x
             10.0.x
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=$TAG" >> $GITHUB_OUTPUT
+          echo "Version: $TAG"
+
       - name: Build
         run: dotnet build -c Release
 
-      - name: Calculate version
-        id: version
-        run: |
-          # Get the latest stable tag (vX.Y.Z without prerelease)
-          LATEST_STABLE_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -v '-' | head -1)
-          echo "Latest stable tag: $LATEST_STABLE_TAG"
-
-          # Count commits since that tag
-          if [[ -n "$LATEST_STABLE_TAG" ]]; then
-            COMMITS_SINCE=$(git rev-list ${LATEST_STABLE_TAG}..HEAD --count)
-          else
-            COMMITS_SINCE=0
-            LATEST_STABLE_TAG="v0.0.0"
-          fi
-          echo "Commits since tag: $COMMITS_SINCE"
-
-          # Parse version components
-          BASE_VERSION=${LATEST_STABLE_TAG#v}
-          MAJOR=$(echo $BASE_VERSION | cut -d. -f1)
-          MINOR=$(echo $BASE_VERSION | cut -d. -f2)
-          PATCH=$(echo $BASE_VERSION | cut -d. -f3)
-
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            # Main branch: bump patch if there are commits since last stable tag
-            if [[ $COMMITS_SINCE -gt 0 ]]; then
-              PATCH=$((PATCH + 1))
-            fi
-            VERSION="${MAJOR}.${MINOR}.${PATCH}"
-            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-            echo "IS_STABLE=true" >> $GITHUB_OUTPUT
-          else
-            # Alpha branch: always bump patch and add alpha suffix
-            PATCH=$((PATCH + 1))
-            VERSION="${MAJOR}.${MINOR}.${PATCH}-alpha.${COMMITS_SINCE}"
-            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-            echo "IS_STABLE=false" >> $GITHUB_OUTPUT
-          fi
-
-          echo "Calculated version: $VERSION"
-
       - name: Pack
-        run: dotnet pack src/TONL.NET.Core/TONL.NET.Core.csproj -c Release -p:MinVerVersionOverride=${{ steps.version.outputs.VERSION }} -o ./nupkg
+        run: dotnet pack src/TONL.NET.Core/TONL.NET.Core.csproj -c Release -p:Version=${{ steps.version.outputs.VERSION }} -o ./nupkg --no-build
+
+      - name: Generate attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ./nupkg/*.nupkg
 
       - name: Push to GitHub Packages
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.GITHUB_TOKEN }} --source https://nuget.pkg.github.com/iamadamreed/index.json --skip-duplicate
 
-      - name: Tag alpha release
-        if: github.ref == 'refs/heads/alpha'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG="v${{ steps.version.outputs.VERSION }}"
-          git tag -a "$TAG" -m "Alpha release $TAG" 2>/dev/null && git push origin "$TAG" || echo "Tag $TAG exists"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Tag stable release
-        if: github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          TAG="v${{ steps.version.outputs.VERSION }}"
-          git tag -a "$TAG" -m "Release $TAG" 2>/dev/null && git push origin "$TAG" || echo "Tag $TAG exists"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create GitHub Release
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.VERSION }}
           generate_release_notes: true
+          files: ./nupkg/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

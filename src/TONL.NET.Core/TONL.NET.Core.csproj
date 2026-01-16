@@ -8,9 +8,6 @@
 
     <!-- Package Info -->
     <PackageId>TONL.NET</PackageId>
-    <!-- Version is auto-calculated by MinVer from git tags -->
-    <MinVerTagPrefix>v</MinVerTagPrefix>
-    <MinVerDefaultPreReleaseIdentifiers>alpha.0</MinVerDefaultPreReleaseIdentifiers>
     <Authors>Adam Reed</Authors>
     <Company>Adam Reed</Company>
     <Description>High-performance .NET implementation of TONL (Token-Optimized Notation Language). Features 3x compression vs JSON, faster deserialization than System.Text.Json, and zero-allocation design.</Description>
@@ -26,6 +23,12 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!-- Reproducible Builds and Source Link -->
+    <Deterministic>true</Deterministic>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
@@ -33,7 +36,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MinVer" Version="7.*" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.*" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
