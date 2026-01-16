@@ -36,7 +36,7 @@ internal static class CodeGenerator
         sb.AppendLine($"    /// <summary>");
         sb.AppendLine($"    /// Generated TONL serializer for <see cref=\"{typeInfo.FullyQualifiedName}\"/>.");
         sb.AppendLine($"    /// </summary>");
-        sb.AppendLine($"    public static class {typeInfo.TypeName}TonlSerializer");
+        sb.AppendLine($"    public static class {typeInfo.SafePropertyName}TonlSerializer");
         sb.AppendLine("    {");
 
         // Property names array for tabular serialization
