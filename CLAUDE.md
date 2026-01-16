@@ -53,6 +53,7 @@ dotnet add src/TONL.NET.Core package PackageName
 - **TONL.NET.Core** - Core serialization library with ref struct reader/writer for minimal allocations
 - **TONL.NET.SourceGenerator** - Roslyn-based source generator that generates serialization code at compile time
 - **TONL.NET.Tests** - xUnit test project
+- **TONL.NET.AotTests** - AOT compilation verification tests (native publish)
 - **TONL.NET.Benchmarks** - BenchmarkDotNet performance tests
 
 ### Key Types
@@ -62,7 +63,12 @@ dotnet add src/TONL.NET.Core package PackageName
 - `TonlDocument` - Document-based API similar to JsonDocument for tree navigation
 - `TonlBufferWriter` - ArrayPool-backed IBufferWriter<byte> implementation
 - `TonlOptions` - Configuration options for serialization behavior
-- `[TonlSerializable]` - Attribute to mark types for source-generated serialization
+
+**Source Generation (STJ-like pattern):**
+- `TonlSerializerContext` - Base class for generated contexts (like `JsonSerializerContext`)
+- `TonlTypeInfo<T>` - Type metadata with fast-path serialize delegates
+- `[TonlSourceGenerationOptions]` - Marks context classes for source generation
+- `[TonlSerializable]` - Registers types on a context or marks standalone types
 
 ### Design Patterns
 
@@ -70,6 +76,33 @@ dotnet add src/TONL.NET.Core package PackageName
 - **Source Generation**: Compile-time code generation eliminates runtime reflection
 - **Buffer Writer Pattern**: IBufferWriter<byte> with ArrayPool for efficient memory usage
 - **System.Text.Json-like API**: Familiar patterns for .NET developers
+- **Context-Based Generation**: AOT-compatible pattern mirroring System.Text.Json source generation
+
+### Source Generator Constraints
+
+The source generator handles these edge cases:
+- **Interfaces/Abstract classes**: Type info generated but no `CreateObject`
+- **Init-only properties**: No `SetValue` delegate (serialization only)
+- **Required properties**: No `SetValue` delegate (must use object initializer)
+- **No parameterless constructor**: No `CreateObject` delegate
+- **Primitive types**: Filtered from context generation (handled by core)
+
+### Numeric Precision
+
+To prevent precision loss:
+- `float` → G9 format (round-trip fidelity)
+- `double` → G17 format
+- `decimal` → string format (preserves 28-29 digits)
+- `enum` → Int64 (handles all underlying types)
+- `ulong` → string (values > long.MaxValue)
+
+### AOT Testing
+
+```bash
+# Build and run AOT tests
+dotnet publish tests/TONL.NET.AotTests -c Release -r osx-arm64
+./tests/TONL.NET.AotTests/bin/Release/net9.0/osx-arm64/publish/TONL.NET.AotTests
+```
 
 ### Dependencies
 

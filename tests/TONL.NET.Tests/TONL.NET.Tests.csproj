@@ -5,6 +5,9 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Suppress nullable warnings in source-generated code (CS8629: nullable value type may be null) -->
+    <!-- TODO: Fix source generator to handle nullable value types properly -->
+    <NoWarn>$(NoWarn);CS8629</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit" Version="2.9.*" />

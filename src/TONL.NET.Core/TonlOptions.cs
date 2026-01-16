@@ -35,10 +35,10 @@ public sealed class TonlOptions
 
     /// <summary>
     /// Gets or sets whether to add spaces after delimiters for readability.
-    /// When false (default), produces compact output: "1,2,3"
-    /// When true, adds spaces for readability: "1, 2, 3"
+    /// When true (default), produces readable output: "1, 2, 3"
+    /// When false, produces compact output: "1,2,3"
     /// </summary>
-    public bool PrettyDelimiters { get; set; }
+    public bool PrettyDelimiters { get; set; } = true;
 
     /// <summary>
     /// Default options instance.

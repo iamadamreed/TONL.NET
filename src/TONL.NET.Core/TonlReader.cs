@@ -520,6 +520,81 @@ public ref partial struct TonlReader
     }
 
     /// <summary>
+    /// Parses an inline object: key{col1,col2,...}: val1, val2
+    /// Returns true if line contains inline object format with values after the colon.
+    /// </summary>
+    public bool TryParseInlineObject(ReadOnlySpan<byte> line, out string key, out string[] columns, out ReadOnlySpan<byte> valuesSpan)
+    {
+        key = string.Empty;
+        columns = Array.Empty<string>();
+        valuesSpan = default;
+
+        var trimmed = TrimWhitespace(line);
+        if (trimmed.IsEmpty)
+        {
+            return false;
+        }
+
+        // Find the opening brace (accounting for quoted key)
+        int braceIdx = FindKeyEndSingle(trimmed, (byte)'{');
+        if (braceIdx < 0)
+        {
+            return false;
+        }
+
+        // Find the closing brace
+        int closeBraceIdx = -1;
+        for (int i = braceIdx + 1; i < trimmed.Length; i++)
+        {
+            if (trimmed[i] == (byte)'}')
+            {
+                closeBraceIdx = i;
+                break;
+            }
+        }
+        if (closeBraceIdx < 0)
+        {
+            return false;
+        }
+
+        // Find the colon after the closing brace
+        int colonIdx = -1;
+        for (int i = closeBraceIdx + 1; i < trimmed.Length; i++)
+        {
+            if (trimmed[i] == (byte)':')
+            {
+                colonIdx = i;
+                break;
+            }
+        }
+        if (colonIdx < 0)
+        {
+            return false;
+        }
+
+        // Check if there's content after the colon (inline values)
+        var afterColon = trimmed.Slice(colonIdx + 1);
+        var valuesTrimmed = TrimWhitespace(afterColon);
+        if (valuesTrimmed.IsEmpty)
+        {
+            // No inline values - this is a block object header, not inline
+            return false;
+        }
+
+        // Extract key (may be quoted)
+        key = ParseKey(trimmed.Slice(0, braceIdx));
+
+        // Extract columns (may contain quoted identifiers)
+        var columnsSpan = trimmed.Slice(braceIdx + 1, closeBraceIdx - braceIdx - 1);
+        columns = ParseColumns(columnsSpan);
+
+        valuesSpan = valuesTrimmed;
+
+        TokenType = TonlTokenType.ObjectHeader;
+        return true;
+    }
+
+    /// <summary>
     /// Parses an array header: key[N]{col1,col2,...}: or key[N]:
     /// Supports quoted keys like: "@items"[3]{col1,col2}:
     /// </summary>
