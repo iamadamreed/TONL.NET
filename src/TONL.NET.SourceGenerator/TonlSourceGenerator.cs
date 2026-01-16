@@ -613,11 +613,11 @@ public class TonlSourceGenerator : IIncrementalGenerator
     {
         // Generate individual serializer files for each registered type
         // This is required because the context code references {Type}TonlSerializer classes
-        // Only generate individual serializers for types that can be fully serialized/deserialized
-        // Skip primitives, abstracts, interfaces, and non-record types without parameterless constructors
+        // Generate for all concrete types (not primitives, interfaces, or abstract classes)
+        // Even types without parameterless constructors need serializers for PropertyNames, WriteRow, etc.
         foreach (var typeInfo in contextInfo.Types)
         {
-            if (!typeInfo.IsPrimitive && (typeInfo.CanInstantiate || typeInfo.IsRecord))
+            if (!typeInfo.IsPrimitive && !typeInfo.IsInterface && !typeInfo.IsAbstract)
             {
                 var serializerCode = CodeGenerator.GenerateSerializer(typeInfo);
                 var serializerHintName = $"{typeInfo.SafePropertyName}.Tonl.g.cs";
