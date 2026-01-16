@@ -343,10 +343,55 @@ internal static class CodeGenerator
         sb.AppendLine("        [MethodImpl(MethodImplOptions.AggressiveInlining)]");
         sb.AppendLine($"        public static string SerializeToString({typeInfo.FullyQualifiedName} value, TonlOptions? options = null)");
         sb.AppendLine("        {");
-        sb.AppendLine("            var dict = Serialize(value);");
-        sb.AppendLine("            return TonlSerializer.SerializeToString(dict, options);");
+        sb.AppendLine("            using var bufferWriter = new TonlBufferWriter();");
+        sb.AppendLine("            var writer = new TonlWriter(bufferWriter, options ?? TonlOptions.Default);");
+
+        // Write properties at indent level 1 (top-level)
+        if (!typeInfo.IsValueType)
+        {
+            sb.AppendLine("            if (value is null) return string.Empty;");
+        }
+
+        foreach (var prop in typeInfo.Properties)
+        {
+            GeneratePropertyWriteForTopLevel(sb, prop, "value");
+        }
+
+        sb.AppendLine("            writer.Flush();");
+        sb.AppendLine("            return bufferWriter.ToString();");
         sb.AppendLine("        }");
         sb.AppendLine();
+    }
+
+    private static void GeneratePropertyWriteForTopLevel(StringBuilder sb, PropertyInfo prop, string valuePrefix)
+    {
+        var access = $"{valuePrefix}.{prop.Name}";
+
+        sb.AppendLine("            writer.WriteIndent(1);");
+
+        if (prop.IsNullable && prop.Category != PropertyCategory.String)
+        {
+            sb.AppendLine($"            if ({access} is null)");
+            sb.AppendLine($"                writer.WriteKeyNull(\"{prop.Name}\");");
+            sb.AppendLine("            else");
+            sb.Append("                ");
+            GenerateSimplePropertyWriteCall(sb, prop, prop.IsNullable ? $"{access}.Value" : access);
+        }
+        else if (prop.Category == PropertyCategory.String && prop.IsNullable)
+        {
+            sb.AppendLine($"            if ({access} is null)");
+            sb.AppendLine($"                writer.WriteKeyNull(\"{prop.Name}\");");
+            sb.AppendLine("            else");
+            sb.Append("                ");
+            GenerateSimplePropertyWriteCall(sb, prop, access);
+        }
+        else
+        {
+            sb.Append("            ");
+            GenerateSimplePropertyWriteCall(sb, prop, access);
+        }
+
+        sb.AppendLine("            writer.WriteNewLine();");
     }
 
     private static void GenerateWritePropertiesMethod(StringBuilder sb, SerializableTypeInfo typeInfo)
