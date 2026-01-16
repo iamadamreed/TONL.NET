@@ -25,23 +25,23 @@ public class DelimiterTests
 
         // Default comma should not require a header
         Assert.DoesNotContain("#delimiter", tonl);
-        // Compact format by default: values separated by comma without space
-        Assert.Contains("1,2,3", tonl);
+        // Pretty format by default per TONL spec: values separated by comma with space
+        Assert.Contains("1, 2, 3", tonl);
     }
 
     [Fact]
-    public void Comma_PrettyDelimiters_AddsSpaces()
+    public void Comma_CompactDelimiters_NoSpaces()
     {
         var dict = new Dictionary<string, object?>
         {
             ["items"] = new List<int> { 1, 2, 3 }
         };
 
-        var options = new TonlOptions { PrettyDelimiters = true };
+        var options = new TonlOptions { PrettyDelimiters = false };
         var tonl = TonlSerializer.SerializeToString(dict, options);
 
-        // Pretty format: values separated by comma with space
-        Assert.Contains(", ", tonl);
+        // Compact format: values separated by comma without space
+        Assert.Contains("1,2,3", tonl);
     }
 
     [Fact]

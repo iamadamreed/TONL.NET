@@ -372,23 +372,50 @@ public static class TonlSerializer
         // Get column names
         var columns = properties.Select(p => p.Name).ToArray();
 
-        // Check if we can use single-line format
-        bool hasNested = properties.Any(p =>
+        // Check if all property values are primitives (supports inline format)
+        bool allPrimitive = properties.All(p =>
         {
             var val = p.GetValue(value);
-            if (val is null) return false;
+            if (val is null) return true;
             var pType = val.GetType();
-            return !IsPrimitiveType(pType) && val is not string;
+            return IsPrimitiveType(pType);
         });
 
-        writer.WriteIndent(indent);
-        writer.WriteObjectHeader(key, columns);
-        writer.WriteNewLine();
-
-        foreach (var prop in properties)
+        // Use inline format for nested objects with only primitive values
+        // (indent > 0 means this is a nested object, not root)
+        if (allPrimitive && indent > 0)
         {
-            var propValue = prop.GetValue(value);
-            SerializeValue(ref writer, propValue, prop.Name, indent + 1, options, seen);
+            writer.WriteIndent(indent);
+            writer.WriteObjectHeader(key, columns);
+            writer.WriteByte((byte)' ');
+
+            bool first = true;
+            foreach (var prop in properties)
+            {
+                if (!first)
+                {
+                    writer.WriteDelimiter();
+                }
+                first = false;
+
+                var propValue = prop.GetValue(value);
+                WritePrimitiveValue(ref writer, propValue, options);
+            }
+
+            writer.WriteNewLine();
+        }
+        else
+        {
+            // Block format for root objects or objects with nested values
+            writer.WriteIndent(indent);
+            writer.WriteObjectHeader(key, columns);
+            writer.WriteNewLine();
+
+            foreach (var prop in properties)
+            {
+                var propValue = prop.GetValue(value);
+                SerializeValue(ref writer, propValue, prop.Name, indent + 1, options, seen);
+            }
         }
     }
 
@@ -723,6 +750,21 @@ public static class TonlSerializer
         {
             writer.WriteKeyValue(key, s);
         }
+        else if (value is DateTime dt)
+        {
+            // ISO 8601 format for round-trip fidelity
+            writer.WriteKeyValue(key, dt.ToString("O"));
+        }
+        else if (value is DateTimeOffset dto)
+        {
+            // ISO 8601 format for round-trip fidelity
+            writer.WriteKeyValue(key, dto.ToString("O"));
+        }
+        else if (value is TimeSpan ts)
+        {
+            // Invariant culture format
+            writer.WriteKeyValue(key, ts.ToString());
+        }
         else
         {
             writer.WriteKeyValue(key, value.ToString() ?? "");
@@ -763,6 +805,21 @@ public static class TonlSerializer
         {
             writer.WriteStringValue(s);
         }
+        else if (value is DateTime dt)
+        {
+            // ISO 8601 format for round-trip fidelity
+            writer.WriteStringValue(dt.ToString("O"));
+        }
+        else if (value is DateTimeOffset dto)
+        {
+            // ISO 8601 format for round-trip fidelity
+            writer.WriteStringValue(dto.ToString("O"));
+        }
+        else if (value is TimeSpan ts)
+        {
+            // Invariant culture format
+            writer.WriteStringValue(ts.ToString());
+        }
         else
         {
             writer.WriteStringValue(value.ToString() ?? "");
@@ -776,6 +833,7 @@ public static class TonlSerializer
                type == typeof(decimal) ||
                type == typeof(DateTime) ||
                type == typeof(DateTimeOffset) ||
+               type == typeof(TimeSpan) ||
                type == typeof(Guid);
     }
 
@@ -1033,7 +1091,23 @@ public static class TonlSerializer
                 continue;
             }
 
-            // Try to parse as object header
+            // Try to parse as inline object: key{col1,col2}: val1, val2
+            if (reader.TryParseInlineObject(trimmed, out var inlineKey, out var inlineColumns, out var inlineValuesSpan))
+            {
+                var inlineDict = new Dictionary<string, object?>();
+                var inlineFields = fieldsBuffer.Slice(0, Math.Min(inlineColumns.Length + 1, fieldsBuffer.Length));
+                int inlineFieldCount = reader.ParseFields(inlineValuesSpan, inlineFields);
+
+                for (int j = 0; j < Math.Min(inlineFieldCount, inlineColumns.Length); j++)
+                {
+                    var fieldSpan = inlineValuesSpan[inlineFields[j]];
+                    inlineDict[inlineColumns[j]] = reader.ParsePrimitiveValue(fieldSpan);
+                }
+                currentDict[inlineKey] = inlineDict;
+                continue;
+            }
+
+            // Try to parse as object header (block format)
             if (reader.TryParseObjectHeader(trimmed, out var objKey, out var objColumns))
             {
                 var newDict = new Dictionary<string, object?>();

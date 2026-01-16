@@ -124,14 +124,37 @@ public class TonlSourceGenerator : IIncrementalGenerator
         }
 
         var properties = orderedProperties
-            .Select(p => new PropertyInfo(
-                p.Name,
-                p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                p.Type.NullableAnnotation == NullableAnnotation.Annotated,
-                p.SetMethod != null && p.SetMethod.DeclaredAccessibility == Accessibility.Public,
-                IsInitOnlyProperty(p),
-                IsRequiredProperty(p),
-                GetPropertyCategory(p.Type)))
+            .Select(p =>
+            {
+                var category = GetPropertyCategory(p.Type);
+                var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace) =
+                    category == PropertyCategory.Collection
+                        ? GetCollectionElementInfo(p.Type)
+                        : (null, PropertyCategory.Unknown, null, false, null, null);
+                var objectSafePropertyName = category == PropertyCategory.Object
+                    ? GetObjectSafePropertyName(p.Type)
+                    : null;
+                var objectGeneratedNamespace = category == PropertyCategory.Object
+                    ? GetObjectGeneratedNamespace(p.Type)
+                    : null;
+
+                return new PropertyInfo(
+                    p.Name,
+                    p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    p.Type.NullableAnnotation == NullableAnnotation.Annotated,
+                    p.SetMethod != null && p.SetMethod.DeclaredAccessibility == Accessibility.Public,
+                    IsInitOnlyProperty(p),
+                    IsRequiredProperty(p),
+                    category,
+                    elementTypeName,
+                    elementCategory,
+                    elementSafePropertyName,
+                    isDictionary,
+                    keyTypeName,
+                    objectSafePropertyName,
+                    elementGeneratedNamespace,
+                    objectGeneratedNamespace);
+            })
             .ToImmutableArray();
 
         var namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace
@@ -209,6 +232,91 @@ public class TonlSourceGenerator : IIncrementalGenerator
                displayName.Contains("Dictionary<") ||
                displayName.Contains("IEnumerable<") ||
                displayName.Contains("ICollection<");
+    }
+
+    private static bool IsDictionaryType(ITypeSymbol type)
+    {
+        var displayName = type.ToDisplayString();
+        return displayName.Contains("Dictionary<") ||
+               displayName.Contains("IDictionary<") ||
+               displayName.Contains("ConcurrentDictionary<") ||
+               displayName.Contains("IReadOnlyDictionary<");
+    }
+
+    private static (string? ElementTypeName, PropertyCategory ElementCategory, string? ElementSafePropertyName, bool IsDictionary, string? KeyTypeName, string? ElementGeneratedNamespace) GetCollectionElementInfo(ITypeSymbol type)
+    {
+        // Handle arrays
+        if (type is IArrayTypeSymbol arrayType)
+        {
+            var elementType = arrayType.ElementType;
+            var elementTypeName = elementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var elementCategory = GetPropertyCategory(elementType);
+            var elementSafePropertyName = elementType is INamedTypeSymbol namedElement
+                ? GetSafePropertyName(namedElement)
+                : elementType.Name;
+            var elementNamespace = GetGeneratedNamespace(elementType);
+            return (elementTypeName, elementCategory, elementSafePropertyName, false, null, elementNamespace);
+        }
+
+        // Handle generic collections
+        if (type is INamedTypeSymbol namedType && namedType.IsGenericType)
+        {
+            var typeArgs = namedType.TypeArguments;
+
+            // Dictionary types have 2 type arguments
+            if (IsDictionaryType(type) && typeArgs.Length == 2)
+            {
+                var keyType = typeArgs[0];
+                var valueType = typeArgs[1];
+                var valueTypeName = valueType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var valueCategory = GetPropertyCategory(valueType);
+                var valueSafePropertyName = valueType is INamedTypeSymbol namedValue
+                    ? GetSafePropertyName(namedValue)
+                    : valueType.Name;
+                var keyTypeName = keyType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var valueNamespace = GetGeneratedNamespace(valueType);
+                return (valueTypeName, valueCategory, valueSafePropertyName, true, keyTypeName, valueNamespace);
+            }
+
+            // Other collections (List<T>, IEnumerable<T>, etc.) have 1 type argument
+            if (typeArgs.Length >= 1)
+            {
+                var elementType = typeArgs[0];
+                var elementTypeName = elementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var elementCategory = GetPropertyCategory(elementType);
+                var elementSafePropertyName = elementType is INamedTypeSymbol namedElement
+                    ? GetSafePropertyName(namedElement)
+                    : elementType.Name;
+                var elementNamespace = GetGeneratedNamespace(elementType);
+                return (elementTypeName, elementCategory, elementSafePropertyName, false, null, elementNamespace);
+            }
+        }
+
+        return (null, PropertyCategory.Unknown, null, false, null, null);
+    }
+
+    private static string? GetObjectSafePropertyName(ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol namedType)
+            return GetSafePropertyName(namedType);
+        return type.Name;
+    }
+
+    private static string? GetGeneratedNamespace(ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol namedType)
+        {
+            var ns = namedType.ContainingNamespace;
+            if (ns.IsGlobalNamespace)
+                return "global::TONL.NET.Generated";
+            return $"global::{ns.ToDisplayString()}.Generated";
+        }
+        return "global::TONL.NET.Generated";
+    }
+
+    private static string? GetObjectGeneratedNamespace(ITypeSymbol type)
+    {
+        return GetGeneratedNamespace(type);
     }
 
     /// <summary>
@@ -441,14 +549,37 @@ public class TonlSourceGenerator : IIncrementalGenerator
         }
 
         var properties = orderedProperties
-            .Select(p => new PropertyInfo(
-                p.Name,
-                p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                p.Type.NullableAnnotation == NullableAnnotation.Annotated,
-                p.SetMethod != null && p.SetMethod.DeclaredAccessibility == Accessibility.Public,
-                IsInitOnlyProperty(p),
-                IsRequiredProperty(p),
-                GetPropertyCategory(p.Type)))
+            .Select(p =>
+            {
+                var category = GetPropertyCategory(p.Type);
+                var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace) =
+                    category == PropertyCategory.Collection
+                        ? GetCollectionElementInfo(p.Type)
+                        : (null, PropertyCategory.Unknown, null, false, null, null);
+                var objectSafePropertyName = category == PropertyCategory.Object
+                    ? GetObjectSafePropertyName(p.Type)
+                    : null;
+                var objectGeneratedNamespace = category == PropertyCategory.Object
+                    ? GetObjectGeneratedNamespace(p.Type)
+                    : null;
+
+                return new PropertyInfo(
+                    p.Name,
+                    p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    p.Type.NullableAnnotation == NullableAnnotation.Annotated,
+                    p.SetMethod != null && p.SetMethod.DeclaredAccessibility == Accessibility.Public,
+                    IsInitOnlyProperty(p),
+                    IsRequiredProperty(p),
+                    category,
+                    elementTypeName,
+                    elementCategory,
+                    elementSafePropertyName,
+                    isDictionary,
+                    keyTypeName,
+                    objectSafePropertyName,
+                    elementGeneratedNamespace,
+                    objectGeneratedNamespace);
+            })
             .ToImmutableArray();
 
         var namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace
@@ -480,6 +611,19 @@ public class TonlSourceGenerator : IIncrementalGenerator
         SourceProductionContext context,
         ContextInfo contextInfo)
     {
+        // Generate individual serializer files for each registered type
+        // This is required because the context code references {Type}TonlSerializer classes
+        foreach (var typeInfo in contextInfo.Types)
+        {
+            if (!typeInfo.IsPrimitive)
+            {
+                var serializerCode = CodeGenerator.GenerateSerializer(typeInfo);
+                var serializerHintName = $"{typeInfo.TypeName}.Tonl.g.cs";
+                context.AddSource(serializerHintName, SourceText.From(serializerCode, Encoding.UTF8));
+            }
+        }
+
+        // Generate the context partial class
         var code = CodeGenerator.GenerateContext(contextInfo);
         var hintName = $"{contextInfo.ContextName}.Tonl.g.cs";
 
@@ -517,7 +661,16 @@ internal sealed record PropertyInfo(
     bool HasPublicSetter,
     bool IsInitOnly,
     bool IsRequired,
-    PropertyCategory Category);
+    PropertyCategory Category,
+    // Collection/Object type information
+    string? ElementTypeName = null,           // Element type for collections (e.g., "int" for List<int>)
+    PropertyCategory ElementCategory = PropertyCategory.Unknown,  // Category of element type
+    string? ElementSafePropertyName = null,   // Safe property name for context lookup (e.g., "OrderItem")
+    bool IsDictionary = false,                // True for Dictionary<K,V> types
+    string? KeyTypeName = null,               // Key type for dictionaries
+    string? ObjectSafePropertyName = null,    // Safe property name for nested object context lookup
+    string? ElementGeneratedNamespace = null, // Generated namespace for element type serializer
+    string? ObjectGeneratedNamespace = null); // Generated namespace for nested object serializer
 
 /// <summary>
 /// Categories of property types for serialization dispatch.

@@ -19,6 +19,7 @@ internal static class CodeGenerator
         sb.AppendLine();
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
+        sb.AppendLine("using System.Linq;");
         sb.AppendLine("using System.Runtime.CompilerServices;");
         sb.AppendLine("using TONL.NET;");
         sb.AppendLine();
@@ -57,6 +58,12 @@ internal static class CodeGenerator
         if (typeInfo.GenerateSerializer)
         {
             GenerateSerializeToStringMethod(sb, typeInfo);
+
+            // WriteProperties helper for nested object serialization
+            GenerateWritePropertiesMethod(sb, typeInfo);
+
+            // WriteRow helper for array/list element serialization
+            GenerateWriteRowMethod(sb, typeInfo);
         }
 
         sb.AppendLine("    }");
@@ -118,6 +125,20 @@ internal static class CodeGenerator
     private static string GetSerializeValueAccess(PropertyInfo prop)
     {
         var access = $"value.{prop.Name}";
+
+        // For nullable value types, we need to handle them differently
+        // The dictionary can store null directly, but for formatting we need .Value
+        if (prop.IsNullable)
+        {
+            return prop.Category switch
+            {
+                PropertyCategory.Enum => $"{access} is not null ? (object?)Convert.ToInt64({access}.Value) : null",
+                PropertyCategory.DateTime => $"{access}?.ToString(\"O\")",
+                PropertyCategory.Guid => $"{access}?.ToString()",
+                PropertyCategory.TimeSpan => $"{access}?.ToString()",
+                _ => access
+            };
+        }
 
         return prop.Category switch
         {
@@ -208,6 +229,14 @@ internal static class CodeGenerator
         var dictAccess = $"dict[\"{prop.Name}\"]";
         var baseType = prop.TypeName.TrimEnd('?');
 
+        // Special case for char - categorized as String but needs extraction
+        if (prop.TypeName.Contains("Char") || prop.TypeName == "char")
+        {
+            return prop.IsNullable
+                ? $"{dictAccess} is string s && s.Length > 0 ? s[0] : null"
+                : $"({dictAccess} as string)?[0] ?? default";
+        }
+
         return prop.Category switch
         {
             PropertyCategory.Boolean => GetTypedConversion(dictAccess, "bool", prop.IsNullable),
@@ -242,6 +271,10 @@ internal static class CodeGenerator
             "global::System.Decimal" or "decimal" => "decimal",
             "global::System.Int16" or "short" => "short",
             "global::System.Byte" or "byte" => "byte",
+            "global::System.SByte" or "sbyte" => "sbyte",
+            "global::System.UInt16" or "ushort" => "ushort",
+            "global::System.UInt32" or "uint" => "uint",
+            "global::System.UInt64" or "ulong" => "ulong",
             _ => typeName.Replace("global::", "")
         };
 
@@ -261,6 +294,10 @@ internal static class CodeGenerator
             "decimal" => "Decimal",
             "short" => "Int16",
             "byte" => "Byte",
+            "sbyte" => "SByte",
+            "ushort" => "UInt16",
+            "uint" => "UInt32",
+            "ulong" => "UInt64",
             _ => typeName
         };
     }
@@ -308,6 +345,248 @@ internal static class CodeGenerator
         sb.AppendLine("            return TonlSerializer.SerializeToString(dict, options);");
         sb.AppendLine("        }");
         sb.AppendLine();
+    }
+
+    private static void GenerateWritePropertiesMethod(StringBuilder sb, SerializableTypeInfo typeInfo)
+    {
+        sb.AppendLine("        /// <summary>");
+        sb.AppendLine($"        /// Writes properties of <see cref=\"{typeInfo.FullyQualifiedName}\"/> to the writer (for nested object serialization).");
+        sb.AppendLine("        /// </summary>");
+        sb.AppendLine("        [MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        sb.AppendLine($"        public static void WriteProperties(ref TonlWriter writer, {typeInfo.FullyQualifiedName} value)");
+        sb.AppendLine("        {");
+
+        if (!typeInfo.IsValueType)
+        {
+            sb.AppendLine("            if (value is null) return;");
+        }
+
+        foreach (var prop in typeInfo.Properties)
+        {
+            GeneratePropertyWriteForNested(sb, prop, "value");
+        }
+
+        sb.AppendLine("        }");
+        sb.AppendLine();
+    }
+
+    private static void GenerateWriteRowMethod(StringBuilder sb, SerializableTypeInfo typeInfo)
+    {
+        sb.AppendLine("        /// <summary>");
+        sb.AppendLine($"        /// Writes a <see cref=\"{typeInfo.FullyQualifiedName}\"/> as a tabular row (for array serialization).");
+        sb.AppendLine("        /// </summary>");
+        sb.AppendLine("        [MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        sb.AppendLine($"        public static void WriteRow(ref TonlWriter writer, {typeInfo.FullyQualifiedName} value)");
+        sb.AppendLine("        {");
+
+        if (!typeInfo.IsValueType)
+        {
+            sb.AppendLine("            if (value is null) return;");
+        }
+
+        sb.AppendLine("            writer.WriteIndent(2);");
+
+        // Write all properties as comma-separated values
+        for (int i = 0; i < typeInfo.Properties.Length; i++)
+        {
+            var prop = typeInfo.Properties[i];
+            var access = $"value.{prop.Name}";
+
+            if (i > 0)
+            {
+                sb.AppendLine("            writer.WriteDelimiter();");
+            }
+
+            GenerateRowValueWriteWithNullCheck(sb, prop, access);
+        }
+
+        sb.AppendLine("            writer.WriteNewLine();");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+
+        // Generate WriteRowInline - same as WriteRow but without indent and newline (for inline object format)
+        sb.AppendLine("        /// <summary>");
+        sb.AppendLine($"        /// Writes a <see cref=\"{typeInfo.FullyQualifiedName}\"/> as inline values (no indent/newline).");
+        sb.AppendLine("        /// </summary>");
+        sb.AppendLine("        [MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        sb.AppendLine($"        public static void WriteRowInline(ref TonlWriter writer, {typeInfo.FullyQualifiedName} value)");
+        sb.AppendLine("        {");
+
+        if (!typeInfo.IsValueType)
+        {
+            sb.AppendLine("            if (value is null) return;");
+        }
+
+        // Write all properties as comma-separated values (no indent, no final newline)
+        for (int i = 0; i < typeInfo.Properties.Length; i++)
+        {
+            var prop = typeInfo.Properties[i];
+            var access = $"value.{prop.Name}";
+
+            if (i > 0)
+            {
+                sb.AppendLine("            writer.WriteDelimiter();");
+            }
+
+            GenerateRowValueWriteWithNullCheck(sb, prop, access);
+        }
+
+        sb.AppendLine("        }");
+        sb.AppendLine();
+    }
+
+    private static void GenerateRowValueWriteWithNullCheck(StringBuilder sb, PropertyInfo prop, string access)
+    {
+        // For nullable value types, add null check and write "null" string for null values
+        if (prop.IsNullable && prop.Category != PropertyCategory.String)
+        {
+            sb.AppendLine($"            if ({access} is null)");
+            sb.AppendLine("                writer.WriteStringValue(\"null\");");
+            sb.AppendLine("            else");
+            sb.Append("    "); // Extra indent for else branch
+            GenerateRowValueWrite(sb, prop, access);
+        }
+        else
+        {
+            GenerateRowValueWrite(sb, prop, access);
+        }
+    }
+
+    private static void GeneratePropertyWriteForNested(StringBuilder sb, PropertyInfo prop, string valuePrefix)
+    {
+        var access = $"{valuePrefix}.{prop.Name}";
+
+        sb.AppendLine("            writer.WriteIndent(2);");
+
+        if (prop.IsNullable && prop.Category != PropertyCategory.String)
+        {
+            sb.AppendLine($"            if ({access} is null)");
+            sb.AppendLine($"                writer.WriteKeyNull(\"{prop.Name}\");");
+            sb.AppendLine("            else");
+            sb.Append("                ");
+            GenerateSimplePropertyWriteCall(sb, prop, prop.IsNullable ? $"{access}.Value" : access);
+        }
+        else if (prop.Category == PropertyCategory.String && prop.IsNullable)
+        {
+            sb.AppendLine($"            if ({access} is null)");
+            sb.AppendLine($"                writer.WriteKeyNull(\"{prop.Name}\");");
+            sb.AppendLine("            else");
+            sb.Append("                ");
+            GenerateSimplePropertyWriteCall(sb, prop, access);
+        }
+        else
+        {
+            sb.Append("            ");
+            GenerateSimplePropertyWriteCall(sb, prop, access);
+        }
+
+        sb.AppendLine("            writer.WriteNewLine();");
+    }
+
+    private static void GenerateSimplePropertyWriteCall(StringBuilder sb, PropertyInfo prop, string access)
+    {
+        // For nested serialization, only handle primitives - complex types fall back to ToString
+        switch (prop.Category)
+        {
+            case PropertyCategory.Boolean:
+                sb.AppendLine($"writer.WriteKeyBoolean(\"{prop.Name}\", {access});");
+                break;
+            case PropertyCategory.Integer:
+                if (prop.TypeName.Contains("UInt64") || prop.TypeName.Contains("ulong"))
+                    sb.AppendLine($"writer.WriteKeyValue(\"{prop.Name}\", {access}.ToString());");
+                else if (prop.TypeName.Contains("Int64") || prop.TypeName.Contains("long"))
+                    sb.AppendLine($"writer.WriteKeyInt64(\"{prop.Name}\", {access});");
+                else if (prop.TypeName.Contains("UInt32") || prop.TypeName.Contains("uint"))
+                    sb.AppendLine($"writer.WriteKeyInt64(\"{prop.Name}\", {access});");
+                else
+                    sb.AppendLine($"writer.WriteKeyInt32(\"{prop.Name}\", (int){access});");
+                break;
+            case PropertyCategory.Float:
+                if (prop.TypeName.Contains("Single") || prop.TypeName.Contains("float"))
+                    sb.AppendLine($"writer.WriteKeyFloat(\"{prop.Name}\", {access});");
+                else
+                    sb.AppendLine($"writer.WriteKeyDouble(\"{prop.Name}\", {access});");
+                break;
+            case PropertyCategory.Decimal:
+                sb.AppendLine($"writer.WriteKeyDecimal(\"{prop.Name}\", {access});");
+                break;
+            case PropertyCategory.String:
+                if (prop.TypeName.Contains("Char") || prop.TypeName == "char")
+                    sb.AppendLine($"writer.WriteKeyValue(\"{prop.Name}\", {access}.ToString());");
+                else
+                    sb.AppendLine($"writer.WriteKeyValue(\"{prop.Name}\", {access});");
+                break;
+            case PropertyCategory.DateTime:
+                sb.AppendLine($"writer.WriteKeyValue(\"{prop.Name}\", {access}.ToString(\"O\"));");
+                break;
+            case PropertyCategory.Guid:
+            case PropertyCategory.TimeSpan:
+                sb.AppendLine($"writer.WriteKeyValue(\"{prop.Name}\", {access}.ToString());");
+                break;
+            case PropertyCategory.Enum:
+                sb.AppendLine($"writer.WriteKeyInt64(\"{prop.Name}\", Convert.ToInt64({access}));");
+                break;
+            default:
+                sb.AppendLine($"writer.WriteKeyValue(\"{prop.Name}\", {access}?.ToString() ?? \"\");");
+                break;
+        }
+    }
+
+    private static void GenerateRowValueWrite(StringBuilder sb, PropertyInfo prop, string access)
+    {
+        // For nullable value types (not string), use .Value to extract the underlying value
+        // The null check should be handled by the caller
+        var valueAccess = (prop.IsNullable && prop.Category != PropertyCategory.String)
+            ? $"{access}.Value"
+            : access;
+
+        // Write value without key for tabular format
+        switch (prop.Category)
+        {
+            case PropertyCategory.Boolean:
+                sb.AppendLine($"            writer.WriteBoolean({valueAccess});");
+                break;
+            case PropertyCategory.Integer:
+                if (prop.TypeName.Contains("UInt64") || prop.TypeName.Contains("ulong"))
+                    sb.AppendLine($"            writer.WriteStringValue({valueAccess}.ToString());");
+                else if (prop.TypeName.Contains("Int64") || prop.TypeName.Contains("long"))
+                    sb.AppendLine($"            writer.WriteInt64({valueAccess});");
+                else if (prop.TypeName.Contains("UInt32") || prop.TypeName.Contains("uint"))
+                    sb.AppendLine($"            writer.WriteInt64({valueAccess});");
+                else
+                    sb.AppendLine($"            writer.WriteInt32((int){valueAccess});");
+                break;
+            case PropertyCategory.Float:
+                if (prop.TypeName.Contains("Single") || prop.TypeName.Contains("float"))
+                    sb.AppendLine($"            writer.WriteFloat({valueAccess});");
+                else
+                    sb.AppendLine($"            writer.WriteDouble({valueAccess});");
+                break;
+            case PropertyCategory.Decimal:
+                sb.AppendLine($"            writer.WriteDecimal({valueAccess});");
+                break;
+            case PropertyCategory.String:
+                if (prop.TypeName.Contains("Char") || prop.TypeName == "char")
+                    sb.AppendLine($"            writer.WriteStringValue({access}.ToString());");
+                else if (prop.IsNullable)
+                    sb.AppendLine($"            writer.WriteStringValue({access} ?? \"\");");
+                else
+                    sb.AppendLine($"            writer.WriteStringValue({access});");
+                break;
+            case PropertyCategory.DateTime:
+                sb.AppendLine($"            writer.WriteStringValue({valueAccess}.ToString(\"O\"));");
+                break;
+            case PropertyCategory.Guid:
+            case PropertyCategory.TimeSpan:
+                sb.AppendLine($"            writer.WriteStringValue({valueAccess}.ToString());");
+                break;
+            case PropertyCategory.Enum:
+                sb.AppendLine($"            writer.WriteInt64(Convert.ToInt64({valueAccess}));");
+                break;
+            default:
+                sb.AppendLine($"            writer.WriteStringValue({access}?.ToString() ?? \"\");");
+                break;
+        }
     }
 
     /// <summary>
@@ -412,7 +691,8 @@ internal static class CodeGenerator
 
     private static void GenerateFastPathSerializer(StringBuilder sb, SerializableTypeInfo type, string indent)
     {
-        sb.AppendLine($"{indent}            Serialize = static (ref TonlWriter writer, {type.FullyQualifiedName} value) =>");
+        // Non-static lambda captures 'this' (the context) to enable delegation to nested type serializers
+        sb.AppendLine($"{indent}            Serialize = (ref TonlWriter writer, {type.FullyQualifiedName} value) =>");
         sb.AppendLine($"{indent}            {{");
 
         if (!type.IsValueType)
@@ -506,9 +786,240 @@ internal static class CodeGenerator
                 // Note: ulong-backed enums with values > long.MaxValue are not supported
                 sb.AppendLine($"writer.WriteKeyInt64(\"{prop.Name}\", Convert.ToInt64({access}));");
                 break;
+            case PropertyCategory.Collection:
+                GenerateCollectionWrite(sb, prop, access);
+                break;
+            case PropertyCategory.Object:
+                GenerateNestedObjectWrite(sb, prop, access);
+                break;
             default:
                 sb.AppendLine($"writer.WriteKeyValue(\"{prop.Name}\", {access}?.ToString() ?? \"\");");
                 break;
+        }
+    }
+
+    private static void GenerateCollectionWrite(StringBuilder sb, PropertyInfo prop, string access)
+    {
+        if (prop.IsDictionary)
+        {
+            // Dictionary<K,V> - serialize as nested object with key-value pairs
+            GenerateDictionaryWrite(sb, prop, access);
+        }
+        else
+        {
+            // Array, List<T>, IEnumerable<T>, etc. - serialize as array
+            GenerateArrayWrite(sb, prop, access);
+        }
+    }
+
+    private static void GenerateDictionaryWrite(StringBuilder sb, PropertyInfo prop, string access)
+    {
+        // For dictionaries, we need to write each key-value pair
+        // Format: key{subkey1,subkey2,...}:
+        //   subkey1: value1
+        //   subkey2: value2
+        sb.AppendLine("{");
+        sb.AppendLine($"                    if ({access} is not null)");
+        sb.AppendLine("                    {");
+        sb.AppendLine($"                        var dictKeys = {access}.Keys.Select(k => k?.ToString() ?? \"\").ToArray();");
+        sb.AppendLine($"                        writer.WriteObjectHeader(\"{prop.Name}\", dictKeys);");
+        sb.AppendLine("                        writer.WriteNewLine();");
+        sb.AppendLine($"                        foreach (var kvp in {access})");
+        sb.AppendLine("                        {");
+        sb.AppendLine("                            writer.WriteIndent(2);");
+
+        // Write the value based on its category
+        if (prop.ElementCategory == PropertyCategory.Object && prop.ElementSafePropertyName != null)
+        {
+            // Nested object in dictionary - delegate to context
+            sb.AppendLine($"                            writer.WriteKey(kvp.Key?.ToString() ?? \"\");");
+            sb.AppendLine("                            writer.WriteNewLine();");
+            sb.AppendLine($"                            // TODO: Nested object serialization in dictionary requires context access");
+        }
+        else
+        {
+            // Primitive value
+            GenerateDictionaryValueWrite(sb, prop.ElementCategory, prop.ElementTypeName);
+        }
+
+        sb.AppendLine("                            writer.WriteNewLine();");
+        sb.AppendLine("                        }");
+        sb.AppendLine("                    }");
+        sb.AppendLine("                    else");
+        sb.AppendLine("                    {");
+        sb.AppendLine($"                        writer.WriteKeyNull(\"{prop.Name}\");");
+        sb.AppendLine("                    }");
+        sb.AppendLine("                }");
+    }
+
+    private static void GenerateDictionaryValueWrite(StringBuilder sb, PropertyCategory elementCategory, string? elementTypeName)
+    {
+        var valueAccess = "kvp.Value";
+        switch (elementCategory)
+        {
+            case PropertyCategory.Boolean:
+                sb.AppendLine($"                            writer.WriteKeyBoolean(kvp.Key?.ToString() ?? \"\", {valueAccess});");
+                break;
+            case PropertyCategory.Integer:
+                if (elementTypeName?.Contains("Int64") == true || elementTypeName?.Contains("long") == true)
+                    sb.AppendLine($"                            writer.WriteKeyInt64(kvp.Key?.ToString() ?? \"\", {valueAccess});");
+                else
+                    sb.AppendLine($"                            writer.WriteKeyInt32(kvp.Key?.ToString() ?? \"\", (int){valueAccess});");
+                break;
+            case PropertyCategory.Float:
+                if (elementTypeName?.Contains("Single") == true || elementTypeName?.Contains("float") == true)
+                    sb.AppendLine($"                            writer.WriteKeyFloat(kvp.Key?.ToString() ?? \"\", {valueAccess});");
+                else
+                    sb.AppendLine($"                            writer.WriteKeyDouble(kvp.Key?.ToString() ?? \"\", {valueAccess});");
+                break;
+            case PropertyCategory.Decimal:
+                sb.AppendLine($"                            writer.WriteKeyDecimal(kvp.Key?.ToString() ?? \"\", {valueAccess});");
+                break;
+            case PropertyCategory.String:
+                sb.AppendLine($"                            writer.WriteKeyValue(kvp.Key?.ToString() ?? \"\", {valueAccess} ?? \"\");");
+                break;
+            case PropertyCategory.DateTime:
+                sb.AppendLine($"                            writer.WriteKeyValue(kvp.Key?.ToString() ?? \"\", {valueAccess}.ToString(\"O\"));");
+                break;
+            case PropertyCategory.Guid:
+            case PropertyCategory.TimeSpan:
+                sb.AppendLine($"                            writer.WriteKeyValue(kvp.Key?.ToString() ?? \"\", {valueAccess}.ToString());");
+                break;
+            case PropertyCategory.Enum:
+                sb.AppendLine($"                            writer.WriteKeyInt64(kvp.Key?.ToString() ?? \"\", Convert.ToInt64({valueAccess}));");
+                break;
+            default:
+                sb.AppendLine($"                            writer.WriteKeyValue(kvp.Key?.ToString() ?? \"\", {valueAccess}?.ToString() ?? \"\");");
+                break;
+        }
+    }
+
+    private static void GenerateArrayWrite(StringBuilder sb, PropertyInfo prop, string access)
+    {
+        // For arrays/lists, serialize elements
+        // Format for primitives: key[N]: val1, val2, val3
+        // Format for objects (per TONL spec): key[N]{col1,col2}:
+        //   val1, val2
+        //   val3, val4
+
+        sb.AppendLine("{");
+        sb.AppendLine($"                    if ({access} is not null)");
+        sb.AppendLine("                    {");
+
+        if (prop.ElementCategory == PropertyCategory.Object && prop.ElementSafePropertyName != null && prop.ElementGeneratedNamespace != null)
+        {
+            // Collection of complex objects - use tabular format per TONL spec
+            // Format: key[N]{col1,col2}:
+            //           val1, val2
+            //           val3, val4
+            sb.AppendLine($"                        var items = {access}.ToList();");
+            sb.AppendLine($"                        // Use element type's property names for column headers");
+            sb.AppendLine($"                        writer.WriteArrayHeader(\"{prop.Name}\", items.Count, {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.PropertyNames);");
+            sb.AppendLine("                        writer.WriteNewLine();");
+            sb.AppendLine("                        foreach (var item in items)");
+            sb.AppendLine("                        {");
+            sb.AppendLine("                            if (item is not null)");
+            sb.AppendLine("                            {");
+            sb.AppendLine($"                                // Use WriteRow for tabular format");
+            sb.AppendLine($"                                {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.WriteRow(ref writer, item);");
+            sb.AppendLine("                            }");
+            sb.AppendLine("                        }");
+        }
+        else
+        {
+            // Collection of primitives - write as comma-separated values: key[N]: val1, val2, val3
+            sb.AppendLine($"                        var items = {access}.ToList();");
+            sb.AppendLine($"                        writer.WriteKey(\"{prop.Name}\");");
+            sb.AppendLine("                        writer.WriteByte((byte)'[');");
+            sb.AppendLine("                        writer.WriteInt32(items.Count);");
+            sb.AppendLine("                        writer.WriteByte((byte)']');");
+            sb.AppendLine("                        writer.WriteByte((byte)':');");
+            sb.AppendLine("                        writer.WriteByte((byte)' ');");
+            sb.AppendLine("                        for (int i = 0; i < items.Count; i++)");
+            sb.AppendLine("                        {");
+            sb.AppendLine("                            if (i > 0)");
+            sb.AppendLine("                            {");
+            sb.AppendLine("                                writer.WriteDelimiter();");
+            sb.AppendLine("                            }");
+            GenerateArrayElementWrite(sb, prop.ElementCategory, prop.ElementTypeName);
+            sb.AppendLine("                        }");
+        }
+
+        sb.AppendLine("                    }");
+        sb.AppendLine("                    else");
+        sb.AppendLine("                    {");
+        sb.AppendLine($"                        writer.WriteKeyNull(\"{prop.Name}\");");
+        sb.AppendLine("                    }");
+        sb.AppendLine("                }");
+    }
+
+    private static void GenerateArrayElementWrite(StringBuilder sb, PropertyCategory elementCategory, string? elementTypeName)
+    {
+        var itemAccess = "items[i]";
+        switch (elementCategory)
+        {
+            case PropertyCategory.Boolean:
+                sb.AppendLine($"                            writer.WriteBoolean({itemAccess});");
+                break;
+            case PropertyCategory.Integer:
+                if (elementTypeName?.Contains("Int64") == true || elementTypeName?.Contains("long") == true)
+                    sb.AppendLine($"                            writer.WriteInt64({itemAccess});");
+                else
+                    sb.AppendLine($"                            writer.WriteInt32((int){itemAccess});");
+                break;
+            case PropertyCategory.Float:
+                if (elementTypeName?.Contains("Single") == true || elementTypeName?.Contains("float") == true)
+                    sb.AppendLine($"                            writer.WriteFloat({itemAccess});");
+                else
+                    sb.AppendLine($"                            writer.WriteDouble({itemAccess});");
+                break;
+            case PropertyCategory.Decimal:
+                sb.AppendLine($"                            writer.WriteDecimal({itemAccess});");
+                break;
+            case PropertyCategory.String:
+                sb.AppendLine($"                            writer.WriteStringValue({itemAccess} ?? \"\");");
+                break;
+            case PropertyCategory.DateTime:
+                sb.AppendLine($"                            writer.WriteStringValue({itemAccess}.ToString(\"O\"));");
+                break;
+            case PropertyCategory.Guid:
+            case PropertyCategory.TimeSpan:
+                sb.AppendLine($"                            writer.WriteStringValue({itemAccess}.ToString());");
+                break;
+            case PropertyCategory.Enum:
+                sb.AppendLine($"                            writer.WriteInt64(Convert.ToInt64({itemAccess}));");
+                break;
+            default:
+                sb.AppendLine($"                            writer.WriteStringValue({itemAccess}?.ToString() ?? \"\");");
+                break;
+        }
+    }
+
+    private static void GenerateNestedObjectWrite(StringBuilder sb, PropertyInfo prop, string access)
+    {
+        // For nested objects, use inline format per TONL spec: key{col1,col2}: val1, val2
+        // Or if values don't fit inline, use block format with WriteRow
+        if (prop.ObjectSafePropertyName != null && prop.ObjectGeneratedNamespace != null)
+        {
+            sb.AppendLine("{");
+            sb.AppendLine($"                    if ({access} is not null)");
+            sb.AppendLine("                    {");
+            sb.AppendLine($"                        // Use inline object format per TONL spec: key{{col1,col2}}: val1, val2");
+            sb.AppendLine($"                        writer.WriteObjectHeader(\"{prop.Name}\", {prop.ObjectGeneratedNamespace}.{prop.ObjectSafePropertyName}TonlSerializer.PropertyNames);");
+            sb.AppendLine("                        writer.WriteByte((byte)' ');");
+            sb.AppendLine($"                        // Write values inline using WriteRow (without the indent and newline)");
+            sb.AppendLine($"                        {prop.ObjectGeneratedNamespace}.{prop.ObjectSafePropertyName}TonlSerializer.WriteRowInline(ref writer, {access});");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                    else");
+            sb.AppendLine("                    {");
+            sb.AppendLine($"                        writer.WriteKeyNull(\"{prop.Name}\");");
+            sb.AppendLine("                    }");
+            sb.AppendLine("                }");
+        }
+        else
+        {
+            // Fallback for unknown types
+            sb.AppendLine($"writer.WriteKeyValue(\"{prop.Name}\", {access}?.ToString() ?? \"\");");
         }
     }
 
@@ -582,6 +1093,10 @@ internal static class CodeGenerator
             "global::System.Decimal" or "decimal" => "ToDecimal",
             "global::System.Int16" or "short" => "ToInt16",
             "global::System.Byte" or "byte" => "ToByte",
+            "global::System.SByte" or "sbyte" => "ToSByte",
+            "global::System.UInt16" or "ushort" => "ToUInt16",
+            "global::System.UInt32" or "uint" => "ToUInt32",
+            "global::System.UInt64" or "ulong" => "ToUInt64",
             _ => "ToInt32"
         };
 

@@ -7,6 +7,33 @@ using TONL.NET;
 // Simple record
 public record TestRecord(int Id, string Name, bool IsActive);
 
+// ============================================================
+// Collection and Nested Object Test Types
+// ============================================================
+
+// TimeSpan (missing AOT coverage)
+public record TimeSpanRecord(TimeSpan Duration);
+
+// Collections of primitives
+public record CollectionRecord(List<int> Numbers, string[] Tags);
+
+// Dictionary
+public record DictionaryRecord(Dictionary<string, int> Scores);
+
+// Nested object
+public record Address(string City, string Country);
+public record PersonRecord(string Name, Address HomeAddress);
+
+// List of objects
+public record OrderItem(string Product, int Qty, decimal Price);
+public record OrderRecord(int OrderId, List<OrderItem> Items);
+
+// IEnumerable (important interface case)
+public record EnumerableRecord(IEnumerable<string> Values);
+
+// Concurrent collection
+public record ConcurrentRecord(System.Collections.Concurrent.ConcurrentDictionary<string, int> ThreadSafeScores);
+
 // Simple POCO with settable properties
 public class TestPoco
 {
@@ -76,6 +103,16 @@ public enum Status
 [TonlSerializable(typeof(NullableTypesRecord))]
 [TonlSerializable(typeof(TestStruct))]
 [TonlSerializable(typeof(LargeRecord))]
+// New types for collection/object coverage
+[TonlSerializable(typeof(TimeSpanRecord))]
+[TonlSerializable(typeof(CollectionRecord))]
+[TonlSerializable(typeof(DictionaryRecord))]
+[TonlSerializable(typeof(Address))]
+[TonlSerializable(typeof(PersonRecord))]
+[TonlSerializable(typeof(OrderItem))]
+[TonlSerializable(typeof(OrderRecord))]
+[TonlSerializable(typeof(EnumerableRecord))]
+[TonlSerializable(typeof(ConcurrentRecord))]
 public partial class AotTestContext : TonlSerializerContext { }
 
 // ============================================================
@@ -105,6 +142,15 @@ public class Program
 
             // Large type test
             TestLargeRecord();
+
+            // New tests for collection/object coverage
+            TestTimeSpan();
+            TestCollections();
+            TestDictionary();
+            TestNestedObject();
+            TestListOfObjects();
+            TestEnumerable();
+            TestConcurrentCollection();
 
             // Context API tests
             TestContextGetTypeInfo();
@@ -264,6 +310,137 @@ public class Program
 
         var str = System.Text.Encoding.UTF8.GetString(bytes);
         Assert("SerializeToBytes - contains data", str.Contains("Bytes Test"));
+    }
+
+    private static void TestTimeSpan()
+    {
+        var record = new TimeSpanRecord(TimeSpan.FromHours(2.5));
+        var tonl = TonlSerializer.SerializeToString(record, AotTestContext.Default.TimeSpanRecord);
+
+        Assert("TimeSpan - serialization", tonl.Contains("02:30:00") || tonl.Contains("2:30:00"));
+    }
+
+    private static void TestCollections()
+    {
+        var record = new CollectionRecord(
+            Numbers: [1, 2, 3, 4, 5],
+            Tags: ["alpha", "beta", "gamma"]);
+        var tonl = TonlSerializer.SerializeToString(record, AotTestContext.Default.CollectionRecord);
+
+        Console.WriteLine("\n--- CollectionRecord TONL Output ---");
+        Console.WriteLine(tonl);
+        Console.WriteLine("--- End Output ---\n");
+
+        // Must NOT contain type names (bug detection)
+        Assert("Collections - no System.Collections in output",
+            !tonl.Contains("System.Collections"));
+        Assert("Collections - no System.Generic in output",
+            !tonl.Contains("System.Generic"));
+        Assert("Collections - no System.Int32[] in output",
+            !tonl.Contains("System.Int32[]"));
+        Assert("Collections - no System.String[] in output",
+            !tonl.Contains("System.String[]"));
+
+        // Should contain actual values
+        Assert("Collections - contains Numbers", tonl.Contains("Numbers"));
+        Assert("Collections - contains Tags", tonl.Contains("Tags"));
+    }
+
+    private static void TestDictionary()
+    {
+        var record = new DictionaryRecord(
+            Scores: new Dictionary<string, int> { ["Alice"] = 100, ["Bob"] = 85 });
+        var tonl = TonlSerializer.SerializeToString(record, AotTestContext.Default.DictionaryRecord);
+
+        // Must NOT contain type names
+        Assert("Dictionary - no System.Collections in output",
+            !tonl.Contains("System.Collections"));
+        Assert("Dictionary - no Generic.Dictionary in output",
+            !tonl.Contains("Generic.Dictionary"));
+
+        // Should contain key "Scores"
+        Assert("Dictionary - contains Scores key", tonl.Contains("Scores"));
+    }
+
+    private static void TestNestedObject()
+    {
+        var record = new PersonRecord(
+            Name: "John Doe",
+            HomeAddress: new Address(City: "Seattle", Country: "USA"));
+        var tonl = TonlSerializer.SerializeToString(record, AotTestContext.Default.PersonRecord);
+
+        Console.WriteLine("\n--- PersonRecord TONL Output ---");
+        Console.WriteLine(tonl);
+        Console.WriteLine("--- End Output ---\n");
+
+        // Must NOT contain type names as values (bug detection)
+        // Note: "HomeAddress{" is correct - it's the property name, not the type name
+        Assert("NestedObject - no Address type name as value",
+            !tonl.Contains(": Address\n") && !tonl.Contains(": Address\r") && !tonl.Contains(": Address "));
+
+        // Should contain actual values
+        Assert("NestedObject - contains John Doe", tonl.Contains("John Doe"));
+        Assert("NestedObject - contains Seattle", tonl.Contains("Seattle"));
+        Assert("NestedObject - contains USA", tonl.Contains("USA"));
+    }
+
+    private static void TestListOfObjects()
+    {
+        var record = new OrderRecord(
+            OrderId: 12345,
+            Items: [
+                new OrderItem(Product: "Widget", Qty: 2, Price: 19.99m),
+                new OrderItem(Product: "Gadget", Qty: 1, Price: 49.99m)
+            ]);
+        var tonl = TonlSerializer.SerializeToString(record, AotTestContext.Default.OrderRecord);
+
+        Console.WriteLine("\n--- OrderRecord TONL Output ---");
+        Console.WriteLine(tonl);
+        Console.WriteLine("--- End Output ---\n");
+
+        // Must NOT contain type names
+        Assert("ListOfObjects - no System.Collections in output",
+            !tonl.Contains("System.Collections"));
+        Assert("ListOfObjects - no OrderItem type name in output",
+            !tonl.Contains("OrderItem {") && !tonl.Contains("OrderItem{"));
+
+        // Should contain actual values
+        Assert("ListOfObjects - contains OrderId", tonl.Contains("12345"));
+        Assert("ListOfObjects - contains Widget", tonl.Contains("Widget"));
+        Assert("ListOfObjects - contains Gadget", tonl.Contains("Gadget"));
+    }
+
+    private static void TestEnumerable()
+    {
+        var record = new EnumerableRecord(Values: new[] { "one", "two", "three" });
+        var tonl = TonlSerializer.SerializeToString(record, AotTestContext.Default.EnumerableRecord);
+
+        // Must NOT contain type names
+        Assert("Enumerable - no System.String[] in output",
+            !tonl.Contains("System.String[]"));
+        Assert("Enumerable - no IEnumerable in output",
+            !tonl.Contains("IEnumerable"));
+
+        // Should contain key
+        Assert("Enumerable - contains Values key", tonl.Contains("Values"));
+    }
+
+    private static void TestConcurrentCollection()
+    {
+        var scores = new System.Collections.Concurrent.ConcurrentDictionary<string, int>();
+        scores["Player1"] = 500;
+        scores["Player2"] = 350;
+        var record = new ConcurrentRecord(ThreadSafeScores: scores);
+        var tonl = TonlSerializer.SerializeToString(record, AotTestContext.Default.ConcurrentRecord);
+
+        // Must NOT contain type names
+        Assert("Concurrent - no ConcurrentDictionary in output",
+            !tonl.Contains("ConcurrentDictionary"));
+        Assert("Concurrent - no System.Collections.Concurrent in output",
+            !tonl.Contains("System.Collections.Concurrent"));
+
+        // Should contain key
+        Assert("Concurrent - contains ThreadSafeScores key", tonl.Contains("ThreadSafeScores"));
     }
 
     private static void Assert(string testName, bool condition)
