@@ -1,79 +1,132 @@
 using TONL.NET;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Jobs;
-using System.Text;
 using System.Text.Json;
-using TONL.NET.Benchmarks.Models;
+using System.Text.Json.Nodes;
 
 namespace TONL.NET.Benchmarks;
 
 /// <summary>
 /// Deserialization speed benchmarks comparing TONL.NET to System.Text.Json.
+/// Uses fixtures aligned with TypeScript TONL SDK for comparable results.
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RuntimeMoniker.Net90)]
+[SimpleJob(RuntimeMoniker.Net10_0)]
 [MarkdownExporter]
 public class DeserializationBenchmarks
 {
-    private byte[] _usersJsonBytes = null!;
-    private byte[] _usersTonlBytes = null!;
-    private byte[] _productsJsonBytes = null!;
-    private byte[] _productsTonlBytes = null!;
-    private byte[] _apiResponseJsonBytes = null!;
-    private byte[] _apiResponseTonlBytes = null!;
+    // Small: sample-users.json (611 B)
+    private byte[] _smallJsonBytes = null!;
+    private byte[] _smallTonlBytes = null!;
+
+    // Medium: sample.json (6.8 KB)
+    private byte[] _mediumJsonBytes = null!;
+    private byte[] _mediumTonlBytes = null!;
+
+    // Large: northwind.json (19.5 KB)
+    private byte[] _largeJsonBytes = null!;
+    private byte[] _largeTonlBytes = null!;
 
     [GlobalSetup]
     public void Setup()
     {
-        // Load JSON data using absolute paths
         var fixturesPath = Path.Combine(AppContext.BaseDirectory, "Fixtures");
 
-        _usersJsonBytes = File.ReadAllBytes(Path.Combine(fixturesPath, "sample-users.json"));
-        _productsJsonBytes = File.ReadAllBytes(Path.Combine(fixturesPath, "ecommerce-products.json"));
-        _apiResponseJsonBytes = File.ReadAllBytes(Path.Combine(fixturesPath, "api-response.json"));
+        // Load small fixture
+        _smallJsonBytes = File.ReadAllBytes(Path.Combine(fixturesPath, "sample-users.json"));
+        _smallTonlBytes = ConvertJsonToTonl(_smallJsonBytes);
 
-        // Pre-serialize to TONL for deserialization benchmarks
-        var users = JsonSerializer.Deserialize<User[]>(_usersJsonBytes)!;
-        _usersTonlBytes = TonlSerializer.SerializeToBytes(users);
+        // Load medium fixture
+        _mediumJsonBytes = File.ReadAllBytes(Path.Combine(fixturesPath, "sample.json"));
+        _mediumTonlBytes = ConvertJsonToTonl(_mediumJsonBytes);
 
-        var products = JsonSerializer.Deserialize<ProductsContainer>(_productsJsonBytes)!;
-        _productsTonlBytes = TonlSerializer.SerializeToBytes(products);
-
-        var apiResponse = JsonSerializer.Deserialize<ApiResponse>(_apiResponseJsonBytes)!;
-        _apiResponseTonlBytes = TonlSerializer.SerializeToBytes(apiResponse);
+        // Load large fixture
+        _largeJsonBytes = File.ReadAllBytes(Path.Combine(fixturesPath, "northwind.json"));
+        _largeTonlBytes = ConvertJsonToTonl(_largeJsonBytes);
     }
 
-    // --- Users Dataset ---
+    // ============================================================
+    // SMALL DATASET (sample-users.json - 611 B)
+    // ============================================================
 
-    [Benchmark(Description = "JSON Deserialize - Users")]
-    public User[]? Json_Deserialize_Users() =>
-        JsonSerializer.Deserialize<User[]>(_usersJsonBytes);
+    [Benchmark(Description = "JSON Decode - Small (611 B)")]
+    public JsonNode? Json_Decode_Small() => JsonNode.Parse(_smallJsonBytes);
 
-    [Benchmark(Description = "TONL Deserialize - Users")]
-    public User[]? Tonl_Deserialize_Users() =>
-        TonlSerializer.Deserialize<User[]>(_usersTonlBytes);
+    [Benchmark(Description = "TONL Decode - Small (611 B)")]
+    public Dictionary<string, object?>? Tonl_Decode_Small() =>
+        TonlSerializer.DeserializeToDictionary(_smallTonlBytes);
 
-    [Benchmark(Description = "TONL to Dictionary - Users")]
-    public Dictionary<string, object?>? Tonl_Dictionary_Users() =>
-        TonlSerializer.DeserializeToDictionary(_usersTonlBytes);
+    // ============================================================
+    // MEDIUM DATASET (sample.json - 6.8 KB)
+    // ============================================================
 
-    // --- Products Dataset ---
+    [Benchmark(Description = "JSON Decode - Medium (6.8 KB)")]
+    public JsonNode? Json_Decode_Medium() => JsonNode.Parse(_mediumJsonBytes);
 
-    [Benchmark(Description = "JSON Deserialize - Products")]
-    public ProductsContainer? Json_Deserialize_Products() =>
-        JsonSerializer.Deserialize<ProductsContainer>(_productsJsonBytes);
+    [Benchmark(Description = "TONL Decode - Medium (6.8 KB)")]
+    public Dictionary<string, object?>? Tonl_Decode_Medium() =>
+        TonlSerializer.DeserializeToDictionary(_mediumTonlBytes);
 
-    [Benchmark(Description = "TONL Deserialize - Products")]
-    public ProductsContainer? Tonl_Deserialize_Products() =>
-        TonlSerializer.Deserialize<ProductsContainer>(_productsTonlBytes);
+    // ============================================================
+    // LARGE DATASET (northwind.json - 19.5 KB)
+    // ============================================================
 
-    // --- API Response ---
+    [Benchmark(Description = "JSON Decode - Large (19.5 KB)")]
+    public JsonNode? Json_Decode_Large() => JsonNode.Parse(_largeJsonBytes);
 
-    [Benchmark(Description = "JSON Deserialize - API Response")]
-    public ApiResponse? Json_Deserialize_ApiResponse() =>
-        JsonSerializer.Deserialize<ApiResponse>(_apiResponseJsonBytes);
+    [Benchmark(Description = "TONL Decode - Large (19.5 KB)")]
+    public Dictionary<string, object?>? Tonl_Decode_Large() =>
+        TonlSerializer.DeserializeToDictionary(_largeTonlBytes);
 
-    [Benchmark(Description = "TONL Deserialize - API Response")]
-    public ApiResponse? Tonl_Deserialize_ApiResponse() =>
-        TonlSerializer.Deserialize<ApiResponse>(_apiResponseTonlBytes);
+    // ============================================================
+    // HELPER: Convert JSON bytes to TONL bytes
+    // ============================================================
+
+    private static byte[] ConvertJsonToTonl(byte[] jsonBytes)
+    {
+        var json = System.Text.Encoding.UTF8.GetString(jsonBytes);
+        var data = ConvertJsonToNative(json);
+        return TonlSerializer.SerializeToBytes(data);
+    }
+
+    private static object? ConvertJsonToNative(string json)
+    {
+        var node = JsonNode.Parse(json);
+        return ConvertNode(node);
+    }
+
+    private static object? ConvertNode(JsonNode? node)
+    {
+        if (node is null) return null;
+
+        if (node is JsonArray array)
+            return array.Select(ConvertNode).ToList();
+
+        if (node is JsonObject obj)
+        {
+            var dict = new Dictionary<string, object?>();
+            foreach (var kvp in obj)
+                dict[kvp.Key] = ConvertNode(kvp.Value);
+            return dict;
+        }
+
+        if (node is JsonValue value)
+        {
+            var element = value.GetValue<JsonElement>();
+            return element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Number when element.TryGetInt32(out var i) => i,
+                JsonValueKind.Number when element.TryGetInt64(out var l) => l,
+                JsonValueKind.Number => element.GetDouble(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Null => null,
+                _ => element.ToString()
+            };
+        }
+
+        return null;
+    }
 }

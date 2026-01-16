@@ -20,11 +20,15 @@ All notable changes to TONL.NET will be documented in this file.
 - **Source Generator**
   - `[TonlSerializable]` attribute for compile-time code generation
   - Eliminates runtime reflection overhead
+  - Supports records, classes, and structs
+  - Automatic property ordering for record constructors
+  - AggressiveInlining for optimal performance
 
 - **Test Suite**
-  - 263 tests covering full TONL specification compliance
+  - 273 tests covering full TONL specification compliance
   - Data type tests, delimiter tests, edge cases, error handling
   - String handling including multiline and escape sequences
+  - Source generator integration tests
 
 - **Benchmark Suite**
   - Serialization and deserialization speed comparisons

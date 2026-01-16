@@ -2,44 +2,38 @@ using TONL.NET;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Jobs;
 using System.Text.Json;
-using TONL.NET.Benchmarks.Models;
+using System.Text.Json.Nodes;
 
 namespace TONL.NET.Benchmarks;
 
 /// <summary>
 /// Serialization speed benchmarks comparing TONL.NET to System.Text.Json.
+/// Uses fixtures aligned with TypeScript TONL SDK for comparable results.
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RuntimeMoniker.Net90)]
+[SimpleJob(RuntimeMoniker.Net10_0)]
 [MarkdownExporter]
 public class SerializationBenchmarks
 {
-    private User[] _users = null!;
-    private ProductsContainer _products = null!;
-    private ApiResponse _apiResponse = null!;
+    private object? _smallData;       // sample-users.json (611 B)
+    private object? _mediumData;      // sample.json (6.8 KB)
+    private object? _largeData;       // northwind.json (19.5 KB)
 
     private JsonSerializerOptions _jsonOptions = null!;
-    private TonlOptions _tonlOptions = null!;
     private TonlBufferWriter _bufferWriter = null!;
 
     [GlobalSetup]
     public void Setup()
     {
-        // Load fixture data using absolute paths
         var fixturesPath = Path.Combine(AppContext.BaseDirectory, "Fixtures");
 
-        var usersJson = File.ReadAllText(Path.Combine(fixturesPath, "sample-users.json"));
-        _users = JsonSerializer.Deserialize<User[]>(usersJson)!;
-
-        var productsJson = File.ReadAllText(Path.Combine(fixturesPath, "ecommerce-products.json"));
-        _products = JsonSerializer.Deserialize<ProductsContainer>(productsJson)!;
-
-        var apiResponseJson = File.ReadAllText(Path.Combine(fixturesPath, "api-response.json"));
-        _apiResponse = JsonSerializer.Deserialize<ApiResponse>(apiResponseJson)!;
+        _smallData = LoadFixture(Path.Combine(fixturesPath, "sample-users.json"));
+        _mediumData = LoadFixture(Path.Combine(fixturesPath, "sample.json"));
+        _largeData = LoadFixture(Path.Combine(fixturesPath, "northwind.json"));
 
         _jsonOptions = new JsonSerializerOptions { WriteIndented = false };
-        _tonlOptions = TonlOptions.Default;
-        _bufferWriter = new TonlBufferWriter(4096);
+        _bufferWriter = new TonlBufferWriter(32768);
     }
 
     [GlobalCleanup]
@@ -48,35 +42,91 @@ public class SerializationBenchmarks
         _bufferWriter?.Dispose();
     }
 
-    // --- Users Dataset (Small - 3 items) ---
+    // ============================================================
+    // SMALL DATASET (sample-users.json - 611 B)
+    // ============================================================
 
-    [Benchmark(Description = "JSON - Users (3 items)")]
-    public byte[] Json_Users() => JsonSerializer.SerializeToUtf8Bytes(_users, _jsonOptions);
+    [Benchmark(Description = "JSON - Small (611 B)")]
+    public byte[] Json_Small() => JsonSerializer.SerializeToUtf8Bytes(_smallData, _jsonOptions);
 
-    [Benchmark(Description = "TONL - Users (3 items)")]
-    public byte[] Tonl_Users() => TonlSerializer.SerializeToBytes(_users, _tonlOptions);
+    [Benchmark(Description = "TONL - Small (611 B)")]
+    public byte[] Tonl_Small() => TonlSerializer.SerializeToBytes(_smallData);
 
-    [Benchmark(Description = "TONL BufferWriter - Users")]
-    public int Tonl_BufferWriter_Users()
+    [Benchmark(Description = "TONL BufferWriter - Small")]
+    public int Tonl_BufferWriter_Small()
     {
         _bufferWriter.Clear();
-        TonlSerializer.Serialize(_bufferWriter, _users, _tonlOptions);
+        TonlSerializer.Serialize(_bufferWriter, _smallData);
         return _bufferWriter.WrittenCount;
     }
 
-    // --- Products Dataset (Medium - nested objects with arrays) ---
+    // ============================================================
+    // MEDIUM DATASET (sample.json - 6.8 KB)
+    // ============================================================
 
-    [Benchmark(Description = "JSON - Products")]
-    public byte[] Json_Products() => JsonSerializer.SerializeToUtf8Bytes(_products, _jsonOptions);
+    [Benchmark(Description = "JSON - Medium (6.8 KB)")]
+    public byte[] Json_Medium() => JsonSerializer.SerializeToUtf8Bytes(_mediumData, _jsonOptions);
 
-    [Benchmark(Description = "TONL - Products")]
-    public byte[] Tonl_Products() => TonlSerializer.SerializeToBytes(_products, _tonlOptions);
+    [Benchmark(Description = "TONL - Medium (6.8 KB)")]
+    public byte[] Tonl_Medium() => TonlSerializer.SerializeToBytes(_mediumData);
 
-    // --- API Response (Complex - deeply nested) ---
+    // ============================================================
+    // LARGE DATASET (northwind.json - 19.5 KB)
+    // ============================================================
 
-    [Benchmark(Description = "JSON - API Response")]
-    public byte[] Json_ApiResponse() => JsonSerializer.SerializeToUtf8Bytes(_apiResponse, _jsonOptions);
+    [Benchmark(Description = "JSON - Large (19.5 KB)")]
+    public byte[] Json_Large() => JsonSerializer.SerializeToUtf8Bytes(_largeData, _jsonOptions);
 
-    [Benchmark(Description = "TONL - API Response")]
-    public byte[] Tonl_ApiResponse() => TonlSerializer.SerializeToBytes(_apiResponse, _tonlOptions);
+    [Benchmark(Description = "TONL - Large (19.5 KB)")]
+    public byte[] Tonl_Large() => TonlSerializer.SerializeToBytes(_largeData);
+
+    // ============================================================
+    // HELPER: Load JSON fixture to native types
+    // ============================================================
+
+    private static object? LoadFixture(string path)
+    {
+        var json = File.ReadAllText(path);
+        return ConvertJsonToNative(json);
+    }
+
+    private static object? ConvertJsonToNative(string json)
+    {
+        var node = JsonNode.Parse(json);
+        return ConvertNode(node);
+    }
+
+    private static object? ConvertNode(JsonNode? node)
+    {
+        if (node is null) return null;
+
+        if (node is JsonArray array)
+            return array.Select(ConvertNode).ToList();
+
+        if (node is JsonObject obj)
+        {
+            var dict = new Dictionary<string, object?>();
+            foreach (var kvp in obj)
+                dict[kvp.Key] = ConvertNode(kvp.Value);
+            return dict;
+        }
+
+        if (node is JsonValue value)
+        {
+            var element = value.GetValue<JsonElement>();
+            return element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Number when element.TryGetInt32(out var i) => i,
+                JsonValueKind.Number when element.TryGetInt64(out var l) => l,
+                JsonValueKind.Number => element.GetDouble(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Null => null,
+                _ => element.ToString()
+            };
+        }
+
+        return null;
+    }
 }

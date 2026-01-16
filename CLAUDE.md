@@ -20,7 +20,33 @@ dotnet run --project benchmarks/TONL.Benchmarks -c Release
 
 ## Architecture
 
-TONL.NET is a high-performance serialization library for TONL (Token-Optimized Notation Language) targeting .NET 8.0.
+TONL.NET is a high-performance serialization library for TONL (Token-Optimized Notation Language) targeting .NET 9.0 and .NET 10.0.
+
+### Namespace Convention
+
+**IMPORTANT**: The root namespace is `TONL.NET`. All sub-namespaces follow `TONL.NET.X`:
+- `TONL.NET` - Core types (TonlSerializer, TonlReader, TonlWriter, etc.)
+- `TONL.NET.SourceGenerator` - Source generator types
+- `TONL.NET.Tests` - Test types
+- `TONL.NET.Benchmarks` - Benchmark types
+- `TONL.NET.Generated` - Generated serializer code
+
+### CLI Commands for Project Management
+
+Always use CLI tools instead of manually creating project files:
+```bash
+# Create new class library
+dotnet new classlib -n TONL.NewProject -o src/TONL.NewProject
+
+# Add to solution
+dotnet sln add src/TONL.NewProject/TONL.NewProject.csproj
+
+# Add project reference
+dotnet add src/TONL.Core reference src/TONL.NewProject
+
+# Add package reference
+dotnet add src/TONL.Core package PackageName
+```
 
 ### Projects
 

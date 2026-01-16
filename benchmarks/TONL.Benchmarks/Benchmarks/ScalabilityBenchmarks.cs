@@ -11,6 +11,7 @@ namespace TONL.NET.Benchmarks;
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RuntimeMoniker.Net90)]
+[SimpleJob(RuntimeMoniker.Net10_0)]
 [MarkdownExporter]
 public class ScalabilityBenchmarks
 {
