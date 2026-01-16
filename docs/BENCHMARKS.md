@@ -36,6 +36,15 @@ For small objects with unique keys, JSON may actually be more compact.
 
 ## Encode/Decode Performance
 
+### TypeScript TONL SDK Results
+
+| Fixture | Encode | Decode |
+|---------|--------|--------|
+| sample-users.json (611 B) | 0.012 ms | 0.008 ms |
+| nested-project.json (710 B) | 0.015 ms | 0.010 ms |
+| sample.json (6.9 KB) | 0.089 ms | 0.052 ms |
+| northwind.json (19.5 KB) | 0.156 ms | 0.071 ms |
+
 ### .NET 10.0 Results
 
 | Fixture | TONL Encode | JSON Encode | TONL Decode | JSON Decode |
@@ -74,6 +83,17 @@ For small objects with unique keys, JSON may actually be more compact.
 | sample-users.json | 6,704 B | 800 B | 6,056 B | 1,496 B |
 | sample.json | 66,459 B | 5,560 B | 56,760 B | 15,056 B |
 
+### .NET 9.0 Memory Usage
+
+| Fixture | TONL Encode | JSON Encode | TONL Decode | JSON Decode |
+|---------|-------------|-------------|-------------|-------------|
+| nested-project.json | 6,288 B | 1,336 B | 5,792 B | 1,616 B |
+| northwind.json | 53,008 B | 14,040 B | 95,160 B | 37,024 B |
+| sample-users.json | 6,704 B | 800 B | 6,056 B | 1,496 B |
+| sample.json | 66,459 B | 5,560 B | 56,760 B | 15,056 B |
+
+Memory allocation is identical between .NET 9 and .NET 10 as the same code paths are used.
+
 TONL currently allocates more memory than JSON. Future optimizations will focus on:
 - Reducing intermediate string allocations
 - Pooling dictionaries and lists
@@ -109,12 +129,23 @@ Generated serializers also provide:
 - Write-heavy workloads
 - Memory-constrained environments
 
+### Cross-Platform Comparison (northwind.json)
+
+| Implementation | Encode | Decode |
+|----------------|--------|--------|
+| TypeScript TONL SDK | 156 µs | 71 µs |
+| TONL.NET (.NET 10) | 34 µs | 27 µs |
+| TONL.NET (.NET 9) | 43 µs | 32 µs |
+
+**.NET 10 is 4.6x faster encoding and 2.6x faster decoding than TypeScript.**
+
 ### Throughput Comparison
 
 Based on northwind.json (19.5 KB JSON, 6.1 KB TONL):
 
 | Implementation | Encode Throughput | Decode Throughput |
 |----------------|-------------------|-------------------|
+| TypeScript TONL SDK | ~39 MB/s | ~86 MB/s |
 | TONL.NET (.NET 10) | ~179 MB/s | ~227 MB/s |
 | TONL.NET (.NET 9) | ~144 MB/s | ~194 MB/s |
 | System.Text.Json (.NET 10) | ~1,183 MB/s | ~699 MB/s |
