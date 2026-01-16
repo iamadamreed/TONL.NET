@@ -41,3 +41,4 @@ Thumbs.db
 
 # direnv (contains tokens)
 .envrc
+benchmark-publish/
