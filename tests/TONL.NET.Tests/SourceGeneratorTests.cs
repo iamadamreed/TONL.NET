@@ -699,6 +699,8 @@ public class TableInfo
 [TonlSerializable(typeof(List<TableInfo>))]
 [TonlSerializable(typeof(string[]))]
 [TonlSerializable(typeof(int[]))]
+[TonlSerializable(typeof(IEnumerable<string>))]
+[TonlSerializable(typeof(IEnumerable<TableInfo>))]
 [TonlSerializable(typeof(TableInfo))] // Need to register element type for tabular format
 public partial class RootCollectionContext : TonlSerializerContext { }
 
@@ -1002,6 +1004,67 @@ public class RootCollectionSerializationTests
         Assert.True(typeInfo.IsCollection);
         Assert.True(typeInfo.IsDictionary);
         // Dictionary values are complex objects, so should have element property names
+        Assert.NotNull(typeInfo.CollectionElementPropertyNames);
+        Assert.Contains("Name", typeInfo.CollectionElementPropertyNames);
+        Assert.Contains("RowCount", typeInfo.CollectionElementPropertyNames);
+    }
+
+    [Fact]
+    public void IEnumerableOfStrings_RootLevel_SerializesElements()
+    {
+        IEnumerable<string> enumerable = new List<string> { "one", "two", "three" };
+
+        var tonl = TonlSerializer.SerializeToString(enumerable, RootCollectionContext.Default.IEnumerableOfString);
+
+        // Should contain the elements
+        Assert.Contains("one", tonl);
+        Assert.Contains("two", tonl);
+        Assert.Contains("three", tonl);
+
+        // Should NOT contain CLR interface/type info
+        Assert.DoesNotContain("IEnumerable", tonl);
+    }
+
+    [Fact]
+    public void IEnumerableOfComplexObjects_RootLevel_SerializesTabular()
+    {
+        IEnumerable<TableInfo> enumerable = new List<TableInfo>
+        {
+            new() { Name = "Table1", RowCount = 50 },
+            new() { Name = "Table2", RowCount = 75 }
+        };
+
+        var tonl = TonlSerializer.SerializeToString(enumerable, RootCollectionContext.Default.IEnumerableOfTableInfo);
+
+        // Should contain the property values
+        Assert.Contains("Table1", tonl);
+        Assert.Contains("50", tonl);
+        Assert.Contains("Table2", tonl);
+        Assert.Contains("75", tonl);
+
+        // Should NOT contain CLR interface/type info
+        Assert.DoesNotContain("IEnumerable", tonl);
+    }
+
+    [Fact]
+    public void IEnumerableOfStrings_RootLevel_TypeInfoIsCollection()
+    {
+        var typeInfo = RootCollectionContext.Default.IEnumerableOfString;
+
+        Assert.True(typeInfo.IsCollection);
+        Assert.False(typeInfo.IsDictionary);
+        // Primitives don't have element property names
+        Assert.Null(typeInfo.CollectionElementPropertyNames);
+    }
+
+    [Fact]
+    public void IEnumerableOfComplexObjects_RootLevel_TypeInfoHasElementPropertyNames()
+    {
+        var typeInfo = RootCollectionContext.Default.IEnumerableOfTableInfo;
+
+        Assert.True(typeInfo.IsCollection);
+        Assert.False(typeInfo.IsDictionary);
+        // Should have element property names for tabular headers
         Assert.NotNull(typeInfo.CollectionElementPropertyNames);
         Assert.Contains("Name", typeInfo.CollectionElementPropertyNames);
         Assert.Contains("RowCount", typeInfo.CollectionElementPropertyNames);
