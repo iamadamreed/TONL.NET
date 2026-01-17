@@ -41,7 +41,38 @@ public static class TonlSerializer
         if (typeInfo.Serialize is not null)
         {
             tonlWriter.WriteIndent(0);
-            tonlWriter.WriteObjectHeader("root", GetPropertyNames(typeInfo));
+
+            // Handle collection types with appropriate headers
+            if (typeInfo.IsCollection)
+            {
+                if (typeInfo.IsDictionary)
+                {
+                    // Dictionary: write root{}: header (keys are written as part of content)
+                    tonlWriter.WriteObjectHeader("root", []);
+                }
+                else if (typeInfo.CollectionElementPropertyNames is not null)
+                {
+                    // List of objects: write root[N]{col1,col2}: header with element property names
+                    // Count the items if possible
+                    var count = value switch
+                    {
+                        System.Collections.ICollection c => c.Count,
+                        _ => 0
+                    };
+                    tonlWriter.WriteArrayHeader("root", count, typeInfo.CollectionElementPropertyNames);
+                }
+                else
+                {
+                    // List of primitives: write root{}: header
+                    tonlWriter.WriteObjectHeader("root", []);
+                }
+            }
+            else
+            {
+                // Regular object: write root{prop1,prop2}: header
+                tonlWriter.WriteObjectHeader("root", GetPropertyNames(typeInfo));
+            }
+
             tonlWriter.WriteNewLine();
             typeInfo.Serialize(ref tonlWriter, value);
         }
