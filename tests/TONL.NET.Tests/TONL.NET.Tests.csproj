@@ -9,7 +9,7 @@
     <!-- CS8629: nullable value type may be null -->
     <!-- CS8600/CS8604: Converting null to non-nullable / null argument to non-nullable parameter -->
     <!-- TODO: Fix source generator to handle nullable types properly -->
-    <NoWarn>$(NoWarn);CS8629;CS8600;CS8604</NoWarn>
+    <NoWarn>$(NoWarn);CS8629;CS8600;CS8601;CS8604</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit" Version="2.9.*" />
