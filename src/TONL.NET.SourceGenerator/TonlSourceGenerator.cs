@@ -521,6 +521,9 @@ public class TonlSourceGenerator : IIncrementalGenerator
         {
             var typeSymbol = symbolsToProcess.Dequeue();
 
+            // Discover types from generic type arguments (e.g., List<T> → T)
+            DiscoverTypeArguments(typeSymbol, types, typeSymbols, registeredTypeNames, symbolsToProcess);
+
             // Get all public properties of this type
             var properties = typeSymbol
                 .GetMembers()
@@ -587,6 +590,34 @@ public class TonlSourceGenerator : IIncrementalGenerator
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Discovers object types from a type's generic type arguments.
+    /// For example, List&lt;User&gt; would discover User.
+    /// Uses TryAddDiscoveredType which handles de-duplication via registeredTypeNames.
+    /// </summary>
+    private static void DiscoverTypeArguments(
+        INamedTypeSymbol typeSymbol,
+        List<SerializableTypeInfo> types,
+        List<INamedTypeSymbol> typeSymbols,
+        HashSet<string> registeredTypeNames,
+        Queue<INamedTypeSymbol> symbolsToProcess)
+    {
+        if (!typeSymbol.IsGenericType)
+            return;
+
+        foreach (var typeArg in typeSymbol.TypeArguments)
+        {
+            if (typeArg is INamedTypeSymbol namedTypeArg)
+            {
+                var category = GetPropertyCategory(namedTypeArg);
+                if (category == PropertyCategory.Object)
+                {
+                    TryAddDiscoveredType(namedTypeArg, types, typeSymbols, registeredTypeNames, symbolsToProcess);
+                }
+            }
+        }
     }
 
     /// <summary>

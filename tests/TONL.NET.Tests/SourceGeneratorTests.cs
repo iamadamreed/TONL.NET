@@ -536,3 +536,138 @@ public class SourceGeneratorEdgeCaseTests
         Assert.Contains("NoCtor", tonl);
     }
 }
+
+// =============================================================================
+// Test types for type argument discovery (auto-discovering generic type parameters)
+// =============================================================================
+
+/// <summary>
+/// Element type that should be auto-discovered from wrapper record.
+/// </summary>
+public class DiscoveredElement
+{
+    public string Name { get; set; } = "";
+    public int Value { get; set; }
+}
+
+/// <summary>
+/// Element type used by multiple wrapper types to test de-duplication.
+/// </summary>
+public class SharedElement
+{
+    public int Id { get; set; }
+    public string Description { get; set; } = "";
+}
+
+/// <summary>
+/// Wrapper that contains List&lt;DiscoveredElement&gt; as a property.
+/// Only this wrapper is registered - DiscoveredElement should be auto-discovered.
+/// Using record to match AOT test pattern that works.
+/// </summary>
+public record DiscoveredElementWrapper(List<DiscoveredElement> Items);
+
+/// <summary>
+/// Wrapper that contains List&lt;SharedElement&gt; as a property.
+/// </summary>
+public record SharedElementListWrapper(List<SharedElement> Items);
+
+/// <summary>
+/// Wrapper that contains Dictionary&lt;string, SharedElement&gt; as a property.
+/// </summary>
+public record SharedElementDictWrapper(Dictionary<string, SharedElement> Data);
+
+/// <summary>
+/// Context that only registers DiscoveredElementWrapper, NOT DiscoveredElement directly.
+/// The source generator should auto-discover DiscoveredElement from the generic type argument.
+/// </summary>
+[TonlSourceGenerationOptions]
+[TonlSerializable(typeof(DiscoveredElementWrapper))]
+public partial class TypeArgumentDiscoveryContext : TonlSerializerContext { }
+
+/// <summary>
+/// Context that registers multiple wrappers with the same element type.
+/// Tests that de-duplication works correctly (SharedElement should only be discovered once).
+/// </summary>
+[TonlSourceGenerationOptions]
+[TonlSerializable(typeof(SharedElementListWrapper))]
+[TonlSerializable(typeof(SharedElementDictWrapper))]
+public partial class DeduplicationTestContext : TonlSerializerContext { }
+
+/// <summary>
+/// Tests for auto-discovery of types from generic type arguments.
+/// </summary>
+public class TypeArgumentDiscoveryTests
+{
+    [Fact]
+    public void GenericTypeArguments_AreAutoDiscovered()
+    {
+        // TypeArgumentDiscoveryContext only registers DiscoveredElementWrapper
+        // but DiscoveredElement should be auto-discovered from List<DiscoveredElement> property
+
+        var element = new DiscoveredElement { Name = "Test", Value = 42 };
+        var wrapper = new DiscoveredElementWrapper([element]);
+
+        var tonl = TonlSerializer.SerializeToString(wrapper, TypeArgumentDiscoveryContext.Default.DiscoveredElementWrapper);
+
+        // Verify the serialized output contains the element data (not type names)
+        Assert.Contains("Test", tonl);
+        Assert.Contains("42", tonl);
+        Assert.DoesNotContain("DiscoveredElement", tonl); // Should not contain type name as value
+    }
+
+    [Fact]
+    public void GenericTypeArguments_DiscoveredElementHasTypeInfo()
+    {
+        // DiscoveredElement should be registered even though it wasn't explicitly listed
+        // Access via the typed property accessor which includes Properties
+        var typeInfo = TypeArgumentDiscoveryContext.Default.DiscoveredElement;
+
+        Assert.NotNull(typeInfo);
+        Assert.Equal(typeof(DiscoveredElement), typeInfo.Type);
+        Assert.NotNull(typeInfo.Properties);
+        Assert.Equal(2, typeInfo.Properties.Count);
+    }
+
+    [Fact]
+    public void GenericTypeArguments_DeduplicationWorks()
+    {
+        // DeduplicationTestContext registers wrappers for both List<SharedElement> and Dictionary<string, SharedElement>
+        // SharedElement should be discovered once (not duplicated)
+        // Access via typed property - if there were duplicates, compilation would fail with duplicate member names
+
+        var typeInfo = DeduplicationTestContext.Default.SharedElement;
+
+        Assert.NotNull(typeInfo);
+        Assert.Equal(typeof(SharedElement), typeInfo.Type);
+    }
+
+    [Fact]
+    public void GenericTypeArguments_MultipleWrapperTypes_WorkCorrectly()
+    {
+        // Test that list wrappers work with auto-discovered element type
+        var element = new SharedElement { Id = 1, Description = "Shared" };
+
+        // Test List wrapper - verify serialization works with auto-discovered element type
+        var listWrapper = new SharedElementListWrapper([element]);
+        var listTonl = TonlSerializer.SerializeToString(listWrapper, DeduplicationTestContext.Default.SharedElementListWrapper);
+
+        Assert.Contains("1", listTonl);
+        Assert.Contains("Shared", listTonl);
+        Assert.DoesNotContain("SharedElement", listTonl); // Should not contain type name as value
+    }
+
+    [Fact]
+    public void GenericTypeArguments_DictionaryValueType_IsDiscovered()
+    {
+        // Verify that SharedElement is auto-discovered from Dictionary<string, SharedElement>
+        // even when only the wrapper type is registered
+        var typeInfo = DeduplicationTestContext.Default.SharedElement;
+
+        Assert.NotNull(typeInfo);
+        Assert.Equal(typeof(SharedElement), typeInfo.Type);
+        Assert.NotNull(typeInfo.Properties);
+        Assert.Equal(2, typeInfo.Properties.Count);
+        Assert.Contains(typeInfo.Properties, p => p.Name == "Id");
+        Assert.Contains(typeInfo.Properties, p => p.Name == "Description");
+    }
+}
