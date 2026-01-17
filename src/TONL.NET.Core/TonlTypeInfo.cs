@@ -63,6 +63,23 @@ public sealed class TonlTypeInfo<T> : TonlTypeInfo
     public DeserializeHandler? Deserialize { get; init; }
 
     /// <summary>
+    /// Gets or sets whether this type is a collection (List, Array, Dictionary, etc.).
+    /// When true, the serializer writes collection elements instead of CLR properties.
+    /// </summary>
+    public bool IsCollection { get; init; }
+
+    /// <summary>
+    /// Gets or sets whether this type is a dictionary collection.
+    /// </summary>
+    public bool IsDictionary { get; init; }
+
+    /// <summary>
+    /// Gets or sets the property names for collection elements (used for tabular headers).
+    /// For List&lt;T&gt; of complex objects, these are the property names of T.
+    /// </summary>
+    public string[]? CollectionElementPropertyNames { get; init; }
+
+    /// <summary>
     /// Delegate for fast-path serialization directly to TonlWriter.
     /// </summary>
     /// <param name="writer">The TONL writer.</param>

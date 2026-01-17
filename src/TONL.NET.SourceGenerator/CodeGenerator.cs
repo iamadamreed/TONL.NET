@@ -719,6 +719,23 @@ internal static class CodeGenerator
         sb.AppendLine($"{indent}        {{");
         sb.AppendLine($"{indent}            OriginatingContext = this,");
 
+        // Add collection metadata for collection types
+        if (type.IsCollection)
+        {
+            sb.AppendLine($"{indent}            IsCollection = true,");
+            if (type.IsDictionaryCollection)
+            {
+                sb.AppendLine($"{indent}            IsDictionary = true,");
+            }
+            // For collections of objects, include element property names for tabular headers
+            if (type.CollectionElementCategory == PropertyCategory.Object &&
+                type.CollectionElementSafePropertyName != null &&
+                type.CollectionElementGeneratedNamespace != null)
+            {
+                sb.AppendLine($"{indent}            CollectionElementPropertyNames = {type.CollectionElementGeneratedNamespace}.{type.CollectionElementSafePropertyName}TonlSerializer.PropertyNames,");
+            }
+        }
+
         // Generate fast-path serialize handler
         if (mode == TonlSourceGenerationMode.Default || mode == TonlSourceGenerationMode.Serialization)
         {
@@ -747,12 +764,220 @@ internal static class CodeGenerator
             sb.AppendLine($"{indent}                if (value is null) return;");
         }
 
-        foreach (var prop in type.Properties)
+        // Handle collection types registered as root types
+        if (type.IsCollection)
         {
-            GeneratePropertyWrite(sb, prop, indent);
+            GenerateRootCollectionWrite(sb, type, indent);
+        }
+        else
+        {
+            // Standard object property serialization
+            foreach (var prop in type.Properties)
+            {
+                GeneratePropertyWrite(sb, prop, indent);
+            }
         }
 
         sb.AppendLine($"{indent}            }},");
+    }
+
+    /// <summary>
+    /// Generates serialization code for collection types registered as root types.
+    /// </summary>
+    private static void GenerateRootCollectionWrite(StringBuilder sb, SerializableTypeInfo type, string indent)
+    {
+        if (type.IsDictionaryCollection)
+        {
+            GenerateRootDictionaryWrite(sb, type, indent);
+        }
+        else
+        {
+            // List<T>, Array, IEnumerable<T>
+            GenerateRootListWrite(sb, type, indent);
+        }
+    }
+
+    /// <summary>
+    /// Generates serialization code for root-level dictionary types.
+    /// </summary>
+    private static void GenerateRootDictionaryWrite(StringBuilder sb, SerializableTypeInfo type, string indent)
+    {
+        // Dictionary: write each key-value pair
+        sb.AppendLine($"{indent}                foreach (var kvp in value)");
+        sb.AppendLine($"{indent}                {{");
+        sb.AppendLine($"{indent}                    writer.WriteIndent(1);");
+
+        // Write the key-value based on element category
+        GenerateRootDictionaryKvpWrite(sb, type, indent);
+
+        sb.AppendLine($"{indent}                    writer.WriteNewLine();");
+        sb.AppendLine($"{indent}                }}");
+    }
+
+    /// <summary>
+    /// Generates the write call for a single key-value pair in a root dictionary.
+    /// </summary>
+    private static void GenerateRootDictionaryKvpWrite(StringBuilder sb, SerializableTypeInfo type, string indent)
+    {
+        var valueAccess = "kvp.Value";
+        var keyAccess = "kvp.Key?.ToString() ?? \"\"";
+
+        switch (type.CollectionElementCategory)
+        {
+            case PropertyCategory.Boolean:
+                sb.AppendLine($"{indent}                    writer.WriteKeyBoolean({keyAccess}, {valueAccess});");
+                break;
+            case PropertyCategory.Integer:
+                if (type.CollectionElementTypeName?.Contains("Int64") == true || type.CollectionElementTypeName?.Contains("long") == true)
+                    sb.AppendLine($"{indent}                    writer.WriteKeyInt64({keyAccess}, {valueAccess});");
+                else
+                    sb.AppendLine($"{indent}                    writer.WriteKeyInt32({keyAccess}, (int){valueAccess});");
+                break;
+            case PropertyCategory.Float:
+                if (type.CollectionElementTypeName?.Contains("Single") == true || type.CollectionElementTypeName?.Contains("float") == true)
+                    sb.AppendLine($"{indent}                    writer.WriteKeyFloat({keyAccess}, {valueAccess});");
+                else
+                    sb.AppendLine($"{indent}                    writer.WriteKeyDouble({keyAccess}, {valueAccess});");
+                break;
+            case PropertyCategory.Decimal:
+                sb.AppendLine($"{indent}                    writer.WriteKeyDecimal({keyAccess}, {valueAccess});");
+                break;
+            case PropertyCategory.String:
+                sb.AppendLine($"{indent}                    writer.WriteKeyValue({keyAccess}, {valueAccess} ?? \"\");");
+                break;
+            case PropertyCategory.DateTime:
+                sb.AppendLine($"{indent}                    writer.WriteKeyValue({keyAccess}, {valueAccess}.ToString(\"O\"));");
+                break;
+            case PropertyCategory.Guid:
+            case PropertyCategory.TimeSpan:
+                sb.AppendLine($"{indent}                    writer.WriteKeyValue({keyAccess}, {valueAccess}.ToString());");
+                break;
+            case PropertyCategory.Enum:
+                sb.AppendLine($"{indent}                    writer.WriteKeyInt64({keyAccess}, Convert.ToInt64({valueAccess}));");
+                break;
+            case PropertyCategory.Object:
+                // Complex object values in dictionary - use inline format if we have element type info
+                if (type.CollectionElementSafePropertyName != null && type.CollectionElementGeneratedNamespace != null)
+                {
+                    sb.AppendLine($"{indent}                    if ({valueAccess} is not null)");
+                    sb.AppendLine($"{indent}                    {{");
+                    sb.AppendLine($"{indent}                        writer.WriteObjectHeader({keyAccess}, {type.CollectionElementGeneratedNamespace}.{type.CollectionElementSafePropertyName}TonlSerializer.PropertyNames);");
+                    sb.AppendLine($"{indent}                        writer.WriteByte((byte)' ');");
+                    sb.AppendLine($"{indent}                        {type.CollectionElementGeneratedNamespace}.{type.CollectionElementSafePropertyName}TonlSerializer.WriteRowInline(ref writer, {valueAccess});");
+                    sb.AppendLine($"{indent}                    }}");
+                    sb.AppendLine($"{indent}                    else");
+                    sb.AppendLine($"{indent}                    {{");
+                    sb.AppendLine($"{indent}                        writer.WriteKeyNull({keyAccess});");
+                    sb.AppendLine($"{indent}                    }}");
+                }
+                else
+                {
+                    sb.AppendLine($"{indent}                    writer.WriteKeyValue({keyAccess}, {valueAccess}?.ToString() ?? \"\");");
+                }
+                break;
+            default:
+                sb.AppendLine($"{indent}                    writer.WriteKeyValue({keyAccess}, {valueAccess}?.ToString() ?? \"\");");
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Generates serialization code for root-level list/array types.
+    /// </summary>
+    private static void GenerateRootListWrite(StringBuilder sb, SerializableTypeInfo type, string indent)
+    {
+        if (type.CollectionElementCategory == PropertyCategory.Object &&
+            type.CollectionElementSafePropertyName != null &&
+            type.CollectionElementGeneratedNamespace != null)
+        {
+            // Complex objects - use tabular format
+            GenerateRootListOfObjectsWrite(sb, type, indent);
+        }
+        else
+        {
+            // Primitives - inline format
+            GenerateRootListOfPrimitivesWrite(sb, type, indent);
+        }
+    }
+
+    /// <summary>
+    /// Generates serialization code for root-level list of complex objects (tabular format).
+    /// </summary>
+    private static void GenerateRootListOfObjectsWrite(StringBuilder sb, SerializableTypeInfo type, string indent)
+    {
+        // Tabular format: write each item as a row
+        sb.AppendLine($"{indent}                foreach (var item in value)");
+        sb.AppendLine($"{indent}                {{");
+        sb.AppendLine($"{indent}                    if (item is not null)");
+        sb.AppendLine($"{indent}                    {{");
+        sb.AppendLine($"{indent}                        {type.CollectionElementGeneratedNamespace}.{type.CollectionElementSafePropertyName}TonlSerializer.WriteRow(ref writer, item);");
+        sb.AppendLine($"{indent}                    }}");
+        sb.AppendLine($"{indent}                }}");
+    }
+
+    /// <summary>
+    /// Generates serialization code for root-level list of primitives.
+    /// </summary>
+    private static void GenerateRootListOfPrimitivesWrite(StringBuilder sb, SerializableTypeInfo type, string indent)
+    {
+        // Write each primitive as a simple key: value line
+        sb.AppendLine($"{indent}                int index = 0;");
+        sb.AppendLine($"{indent}                foreach (var item in value)");
+        sb.AppendLine($"{indent}                {{");
+        sb.AppendLine($"{indent}                    writer.WriteIndent(1);");
+
+        GenerateRootPrimitiveItemWrite(sb, type, indent);
+
+        sb.AppendLine($"{indent}                    writer.WriteNewLine();");
+        sb.AppendLine($"{indent}                    index++;");
+        sb.AppendLine($"{indent}                }}");
+    }
+
+    /// <summary>
+    /// Generates the write call for a single primitive item in a root collection.
+    /// </summary>
+    private static void GenerateRootPrimitiveItemWrite(StringBuilder sb, SerializableTypeInfo type, string indent)
+    {
+        var itemAccess = "item";
+        var keyAccess = "index.ToString()";
+
+        switch (type.CollectionElementCategory)
+        {
+            case PropertyCategory.Boolean:
+                sb.AppendLine($"{indent}                    writer.WriteKeyBoolean({keyAccess}, {itemAccess});");
+                break;
+            case PropertyCategory.Integer:
+                if (type.CollectionElementTypeName?.Contains("Int64") == true || type.CollectionElementTypeName?.Contains("long") == true)
+                    sb.AppendLine($"{indent}                    writer.WriteKeyInt64({keyAccess}, {itemAccess});");
+                else
+                    sb.AppendLine($"{indent}                    writer.WriteKeyInt32({keyAccess}, (int){itemAccess});");
+                break;
+            case PropertyCategory.Float:
+                if (type.CollectionElementTypeName?.Contains("Single") == true || type.CollectionElementTypeName?.Contains("float") == true)
+                    sb.AppendLine($"{indent}                    writer.WriteKeyFloat({keyAccess}, {itemAccess});");
+                else
+                    sb.AppendLine($"{indent}                    writer.WriteKeyDouble({keyAccess}, {itemAccess});");
+                break;
+            case PropertyCategory.Decimal:
+                sb.AppendLine($"{indent}                    writer.WriteKeyDecimal({keyAccess}, {itemAccess});");
+                break;
+            case PropertyCategory.String:
+                sb.AppendLine($"{indent}                    writer.WriteKeyValue({keyAccess}, {itemAccess} ?? \"\");");
+                break;
+            case PropertyCategory.DateTime:
+                sb.AppendLine($"{indent}                    writer.WriteKeyValue({keyAccess}, {itemAccess}.ToString(\"O\"));");
+                break;
+            case PropertyCategory.Guid:
+            case PropertyCategory.TimeSpan:
+                sb.AppendLine($"{indent}                    writer.WriteKeyValue({keyAccess}, {itemAccess}.ToString());");
+                break;
+            case PropertyCategory.Enum:
+                sb.AppendLine($"{indent}                    writer.WriteKeyInt64({keyAccess}, Convert.ToInt64({itemAccess}));");
+                break;
+            default:
+                sb.AppendLine($"{indent}                    writer.WriteKeyValue({keyAccess}, {itemAccess}?.ToString() ?? \"\");");
+                break;
+        }
     }
 
     private static void GeneratePropertyWrite(StringBuilder sb, PropertyInfo prop, string indent)

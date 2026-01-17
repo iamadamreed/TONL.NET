@@ -671,3 +671,339 @@ public class TypeArgumentDiscoveryTests
         Assert.Contains(typeInfo.Properties, p => p.Name == "Description");
     }
 }
+
+// =============================================================================
+// Test types for root-level collection serialization
+// =============================================================================
+
+/// <summary>
+/// Table info for testing List of complex objects.
+/// </summary>
+public class TableInfo
+{
+    public string Name { get; set; } = "";
+    public int RowCount { get; set; }
+}
+
+/// <summary>
+/// Context for testing root-level collection types.
+/// </summary>
+[TonlSourceGenerationOptions]
+[TonlSerializable(typeof(Dictionary<string, string>))]
+[TonlSerializable(typeof(Dictionary<string, int>))]
+[TonlSerializable(typeof(Dictionary<string, TableInfo>))]
+[TonlSerializable(typeof(List<string>))]
+[TonlSerializable(typeof(List<int>))]
+[TonlSerializable(typeof(List<double>))]
+[TonlSerializable(typeof(List<bool>))]
+[TonlSerializable(typeof(List<TableInfo>))]
+[TonlSerializable(typeof(string[]))]
+[TonlSerializable(typeof(int[]))]
+[TonlSerializable(typeof(TableInfo))] // Need to register element type for tabular format
+public partial class RootCollectionContext : TonlSerializerContext { }
+
+/// <summary>
+/// Tests for root-level collection serialization.
+/// </summary>
+public class RootCollectionSerializationTests
+{
+    [Fact]
+    public void Dictionary_RootLevel_SerializesKeyValuePairs()
+    {
+        var dict = new Dictionary<string, string>
+        {
+            ["version"] = "8.0.42",
+            ["hostname"] = "server1"
+        };
+
+        var tonl = TonlSerializer.SerializeToString(dict, RootCollectionContext.Default.DictionaryOfStringAndString);
+
+        // Should contain the key-value pairs
+        Assert.Contains("version", tonl);
+        Assert.Contains("8.0.42", tonl);
+        Assert.Contains("hostname", tonl);
+        Assert.Contains("server1", tonl);
+
+        // Should NOT contain CLR properties
+        Assert.DoesNotContain("Capacity", tonl);
+        Assert.DoesNotContain("Comparer", tonl);
+        Assert.DoesNotContain("Count", tonl);
+        Assert.DoesNotContain("Keys", tonl);
+        Assert.DoesNotContain("Values", tonl);
+    }
+
+    [Fact]
+    public void ListOfStrings_RootLevel_SerializesElements()
+    {
+        var list = new List<string> { "alpha", "beta", "gamma" };
+
+        var tonl = TonlSerializer.SerializeToString(list, RootCollectionContext.Default.ListOfString);
+
+        // Should contain the elements
+        Assert.Contains("alpha", tonl);
+        Assert.Contains("beta", tonl);
+        Assert.Contains("gamma", tonl);
+
+        // Should NOT contain CLR properties
+        Assert.DoesNotContain("Capacity", tonl);
+        Assert.DoesNotContain("Count", tonl);
+    }
+
+    [Fact]
+    public void ListOfInts_RootLevel_SerializesElements()
+    {
+        var list = new List<int> { 10, 20, 30 };
+
+        var tonl = TonlSerializer.SerializeToString(list, RootCollectionContext.Default.ListOfInt32);
+
+        // Should contain the elements
+        Assert.Contains("10", tonl);
+        Assert.Contains("20", tonl);
+        Assert.Contains("30", tonl);
+
+        // Should NOT contain CLR properties
+        Assert.DoesNotContain("Capacity", tonl);
+        Assert.DoesNotContain("Count", tonl);
+    }
+
+    [Fact]
+    public void ListOfComplexObjects_RootLevel_SerializesTabular()
+    {
+        var list = new List<TableInfo>
+        {
+            new() { Name = "Users", RowCount = 100 },
+            new() { Name = "Orders", RowCount = 500 }
+        };
+
+        var tonl = TonlSerializer.SerializeToString(list, RootCollectionContext.Default.ListOfTableInfo);
+
+        // Should contain the property values
+        Assert.Contains("Users", tonl);
+        Assert.Contains("100", tonl);
+        Assert.Contains("Orders", tonl);
+        Assert.Contains("500", tonl);
+
+        // Should NOT contain CLR properties (Capacity: or Count: as key-value pairs)
+        Assert.DoesNotContain("Capacity:", tonl);
+        // Note: "RowCount" is a property name so we can't just check for "Count"
+        // Instead verify it doesn't have "Count:" as a separate key
+        Assert.DoesNotContain("\n  Count:", tonl);
+        Assert.DoesNotContain("\n    Count:", tonl);
+    }
+
+    [Fact]
+    public void EmptyList_RootLevel_DoesNotShowCapacity()
+    {
+        var list = new List<string>();
+
+        var tonl = TonlSerializer.SerializeToString(list, RootCollectionContext.Default.ListOfString);
+
+        // Should NOT contain CLR properties
+        Assert.DoesNotContain("Capacity", tonl);
+        Assert.DoesNotContain("Count", tonl);
+    }
+
+    [Fact]
+    public void EmptyDictionary_RootLevel_DoesNotShowCapacityOrComparer()
+    {
+        var dict = new Dictionary<string, string>();
+
+        var tonl = TonlSerializer.SerializeToString(dict, RootCollectionContext.Default.DictionaryOfStringAndString);
+
+        // Should NOT contain CLR properties
+        Assert.DoesNotContain("Capacity", tonl);
+        Assert.DoesNotContain("Comparer", tonl);
+        Assert.DoesNotContain("Count", tonl);
+        Assert.DoesNotContain("Keys", tonl);
+        Assert.DoesNotContain("Values", tonl);
+    }
+
+    [Fact]
+    public void Dictionary_RootLevel_TypeInfoIsCollection()
+    {
+        var typeInfo = RootCollectionContext.Default.DictionaryOfStringAndString;
+
+        Assert.True(typeInfo.IsCollection);
+        Assert.True(typeInfo.IsDictionary);
+        // Dictionaries don't have element property names (values are primitives)
+        Assert.Null(typeInfo.CollectionElementPropertyNames);
+    }
+
+    [Fact]
+    public void ListOfStrings_RootLevel_TypeInfoIsCollection()
+    {
+        var typeInfo = RootCollectionContext.Default.ListOfString;
+
+        Assert.True(typeInfo.IsCollection);
+        Assert.False(typeInfo.IsDictionary);
+        // Primitives don't have element property names
+        Assert.Null(typeInfo.CollectionElementPropertyNames);
+    }
+
+    [Fact]
+    public void ListOfComplexObjects_RootLevel_TypeInfoHasElementPropertyNames()
+    {
+        var typeInfo = RootCollectionContext.Default.ListOfTableInfo;
+
+        Assert.True(typeInfo.IsCollection);
+        Assert.False(typeInfo.IsDictionary);
+        // Should have element property names for tabular headers
+        Assert.NotNull(typeInfo.CollectionElementPropertyNames);
+        Assert.Contains("Name", typeInfo.CollectionElementPropertyNames);
+        Assert.Contains("RowCount", typeInfo.CollectionElementPropertyNames);
+    }
+
+    [Fact]
+    public void DictionaryOfStringAndInt_RootLevel_SerializesKeyValuePairs()
+    {
+        var dict = new Dictionary<string, int>
+        {
+            ["users"] = 100,
+            ["orders"] = 500
+        };
+
+        var tonl = TonlSerializer.SerializeToString(dict, RootCollectionContext.Default.DictionaryOfStringAndInt32);
+
+        // Should contain the key-value pairs
+        Assert.Contains("users", tonl);
+        Assert.Contains("100", tonl);
+        Assert.Contains("orders", tonl);
+        Assert.Contains("500", tonl);
+
+        // Should NOT contain CLR properties
+        Assert.DoesNotContain("Capacity", tonl);
+        Assert.DoesNotContain("Comparer", tonl);
+    }
+
+    [Fact]
+    public void DictionaryOfComplexObjects_RootLevel_SerializesKeyValuePairs()
+    {
+        var dict = new Dictionary<string, TableInfo>
+        {
+            ["primary"] = new TableInfo { Name = "Users", RowCount = 100 },
+            ["secondary"] = new TableInfo { Name = "Orders", RowCount = 500 }
+        };
+
+        var tonl = TonlSerializer.SerializeToString(dict, RootCollectionContext.Default.DictionaryOfStringAndTableInfo);
+
+        // Should contain the key-value pairs with nested object data
+        Assert.Contains("primary", tonl);
+        Assert.Contains("secondary", tonl);
+        Assert.Contains("Users", tonl);
+        Assert.Contains("Orders", tonl);
+        Assert.Contains("100", tonl);
+        Assert.Contains("500", tonl);
+
+        // Should NOT contain CLR properties
+        Assert.DoesNotContain("Capacity", tonl);
+        Assert.DoesNotContain("Comparer", tonl);
+    }
+
+    [Fact]
+    public void ListOfDoubles_RootLevel_SerializesElements()
+    {
+        // Use values that have exact binary representations to avoid G17 expansion
+        var list = new List<double> { 1.5, 2.5, 3.5 };
+
+        var tonl = TonlSerializer.SerializeToString(list, RootCollectionContext.Default.ListOfDouble);
+
+        // Should contain the elements (floating point values)
+        Assert.Contains("1.5", tonl);
+        Assert.Contains("2.5", tonl);
+        Assert.Contains("3.5", tonl);
+
+        // Should NOT contain CLR properties
+        Assert.DoesNotContain("Capacity", tonl);
+        Assert.DoesNotContain("Count", tonl);
+    }
+
+    [Fact]
+    public void ListOfBools_RootLevel_SerializesElements()
+    {
+        var list = new List<bool> { true, false, true };
+
+        var tonl = TonlSerializer.SerializeToString(list, RootCollectionContext.Default.ListOfBoolean);
+
+        // Should contain the elements
+        Assert.Contains("true", tonl);
+        Assert.Contains("false", tonl);
+
+        // Should NOT contain CLR properties
+        Assert.DoesNotContain("Capacity", tonl);
+        Assert.DoesNotContain("Count", tonl);
+    }
+
+    [Fact]
+    public void StringArray_RootLevel_SerializesElements()
+    {
+        var array = new string[] { "first", "second", "third" };
+
+        var tonl = TonlSerializer.SerializeToString(array, RootCollectionContext.Default.StringArray);
+
+        // Should contain the elements
+        Assert.Contains("first", tonl);
+        Assert.Contains("second", tonl);
+        Assert.Contains("third", tonl);
+
+        // Arrays don't have Capacity property, but verify no Count/Length appears as key
+        Assert.DoesNotContain("Length:", tonl);
+    }
+
+    [Fact]
+    public void IntArray_RootLevel_SerializesElements()
+    {
+        var array = new int[] { 1, 2, 3 };
+
+        var tonl = TonlSerializer.SerializeToString(array, RootCollectionContext.Default.Int32Array);
+
+        // Should contain the elements
+        Assert.Contains("1", tonl);
+        Assert.Contains("2", tonl);
+        Assert.Contains("3", tonl);
+
+        // Arrays don't have Capacity property, but verify no Count/Length appears as key
+        Assert.DoesNotContain("Length:", tonl);
+    }
+
+    [Fact]
+    public void Dictionary_RootLevel_TypeInfo_HasEmptyProperties()
+    {
+        var typeInfo = RootCollectionContext.Default.DictionaryOfStringAndString;
+
+        // Collection types should have empty Properties (not CLR properties)
+        Assert.NotNull(typeInfo.Properties);
+        Assert.Empty(typeInfo.Properties);
+    }
+
+    [Fact]
+    public void List_RootLevel_TypeInfo_HasEmptyProperties()
+    {
+        var typeInfo = RootCollectionContext.Default.ListOfString;
+
+        // Collection types should have empty Properties (not CLR properties)
+        Assert.NotNull(typeInfo.Properties);
+        Assert.Empty(typeInfo.Properties);
+    }
+
+    [Fact]
+    public void Array_RootLevel_TypeInfo_IsCollection()
+    {
+        var typeInfo = RootCollectionContext.Default.StringArray;
+
+        Assert.True(typeInfo.IsCollection);
+        Assert.False(typeInfo.IsDictionary);
+    }
+
+    [Fact]
+    public void DictionaryOfComplexObjects_RootLevel_TypeInfo_IsCollectionAndDictionary()
+    {
+        var typeInfo = RootCollectionContext.Default.DictionaryOfStringAndTableInfo;
+
+        Assert.True(typeInfo.IsCollection);
+        Assert.True(typeInfo.IsDictionary);
+        // Dictionary values are complex objects, so should have element property names
+        Assert.NotNull(typeInfo.CollectionElementPropertyNames);
+        Assert.Contains("Name", typeInfo.CollectionElementPropertyNames);
+        Assert.Contains("RowCount", typeInfo.CollectionElementPropertyNames);
+    }
+}

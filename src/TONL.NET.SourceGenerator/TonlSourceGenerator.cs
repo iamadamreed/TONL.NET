@@ -476,13 +476,24 @@ public class TonlSourceGenerator : IIncrementalGenerator
         foreach (var attr in contextSymbol.GetAttributes())
         {
             if (attr.AttributeClass?.ToDisplayString() == TonlSerializableAttribute &&
-                attr.ConstructorArguments.Length > 0 &&
-                attr.ConstructorArguments[0].Value is INamedTypeSymbol targetType)
+                attr.ConstructorArguments.Length > 0)
             {
-                var typeInfo = ExtractTypeInfoFromSymbol(targetType, attr);
-                types.Add(typeInfo);
-                typeSymbols.Add(targetType);
-                registeredTypeNames.Add(typeInfo.FullyQualifiedName);
+                var argValue = attr.ConstructorArguments[0].Value;
+
+                if (argValue is INamedTypeSymbol targetType)
+                {
+                    var typeInfo = ExtractTypeInfoFromSymbol(targetType, attr);
+                    types.Add(typeInfo);
+                    typeSymbols.Add(targetType);
+                    registeredTypeNames.Add(typeInfo.FullyQualifiedName);
+                }
+                else if (argValue is IArrayTypeSymbol arrayType)
+                {
+                    // Handle array types like string[], int[]
+                    var typeInfo = ExtractTypeInfoFromArraySymbol(arrayType, attr);
+                    types.Add(typeInfo);
+                    registeredTypeNames.Add(typeInfo.FullyQualifiedName);
+                }
             }
         }
 
@@ -669,6 +680,15 @@ public class TonlSourceGenerator : IIncrementalGenerator
             }
         }
 
+        // Check if this is a collection type being registered as a root type
+        var isRootCollection = IsCollectionType(typeSymbol);
+        var isRootDictionary = isRootCollection && IsDictionaryType(typeSymbol);
+
+        // Get collection element info for root-level collections
+        var (collectionElementTypeName, collectionElementCategory, collectionElementSafePropertyName,
+             _, collectionKeyTypeName, collectionElementGeneratedNamespace) =
+            isRootCollection ? GetCollectionElementInfo(typeSymbol) : (null, PropertyCategory.Unknown, null, false, null, null);
+
         var publicProperties = typeSymbol
             .GetMembers()
             .OfType<IPropertySymbol>()
@@ -705,39 +725,49 @@ public class TonlSourceGenerator : IIncrementalGenerator
             orderedProperties = publicProperties.OrderBy(p => p.Name, StringComparer.Ordinal);
         }
 
-        var properties = orderedProperties
-            .Select(p =>
-            {
-                var category = GetPropertyCategory(p.Type);
-                var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace) =
-                    category == PropertyCategory.Collection
-                        ? GetCollectionElementInfo(p.Type)
-                        : (null, PropertyCategory.Unknown, null, false, null, null);
-                var objectSafePropertyName = category == PropertyCategory.Object
-                    ? GetObjectSafePropertyName(p.Type)
-                    : null;
-                var objectGeneratedNamespace = category == PropertyCategory.Object
-                    ? GetObjectGeneratedNamespace(p.Type)
-                    : null;
+        // For collection types registered as root, set Properties to empty
+        // This prevents CLR properties (Capacity, Count, Comparer, etc.) from being serialized
+        ImmutableArray<PropertyInfo> properties;
+        if (isRootCollection)
+        {
+            properties = ImmutableArray<PropertyInfo>.Empty;
+        }
+        else
+        {
+            properties = orderedProperties
+                .Select(p =>
+                {
+                    var category = GetPropertyCategory(p.Type);
+                    var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace) =
+                        category == PropertyCategory.Collection
+                            ? GetCollectionElementInfo(p.Type)
+                            : (null, PropertyCategory.Unknown, null, false, null, null);
+                    var objectSafePropertyName = category == PropertyCategory.Object
+                        ? GetObjectSafePropertyName(p.Type)
+                        : null;
+                    var objectGeneratedNamespace = category == PropertyCategory.Object
+                        ? GetObjectGeneratedNamespace(p.Type)
+                        : null;
 
-                return new PropertyInfo(
-                    p.Name,
-                    p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    p.Type.NullableAnnotation == NullableAnnotation.Annotated,
-                    p.SetMethod != null && p.SetMethod.DeclaredAccessibility == Accessibility.Public,
-                    IsInitOnlyProperty(p),
-                    IsRequiredProperty(p),
-                    category,
-                    elementTypeName,
-                    elementCategory,
-                    elementSafePropertyName,
-                    isDictionary,
-                    keyTypeName,
-                    objectSafePropertyName,
-                    elementGeneratedNamespace,
-                    objectGeneratedNamespace);
-            })
-            .ToImmutableArray();
+                    return new PropertyInfo(
+                        p.Name,
+                        p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        p.Type.NullableAnnotation == NullableAnnotation.Annotated,
+                        p.SetMethod != null && p.SetMethod.DeclaredAccessibility == Accessibility.Public,
+                        IsInitOnlyProperty(p),
+                        IsRequiredProperty(p),
+                        category,
+                        elementTypeName,
+                        elementCategory,
+                        elementSafePropertyName,
+                        isDictionary,
+                        keyTypeName,
+                        objectSafePropertyName,
+                        elementGeneratedNamespace,
+                        objectGeneratedNamespace);
+                })
+                .ToImmutableArray();
+        }
 
         var namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace
             ? null
@@ -761,7 +791,78 @@ public class TonlSourceGenerator : IIncrementalGenerator
             IsInterface: typeSymbol.TypeKind == TypeKind.Interface,
             IsAbstract: typeSymbol.IsAbstract,
             IsPrimitive: isPrimitive,
-            HasInitOnlyProperties: hasInitOnlyProps);
+            HasInitOnlyProperties: hasInitOnlyProps,
+            // Collection metadata
+            IsCollection: isRootCollection,
+            IsDictionaryCollection: isRootDictionary,
+            CollectionElementTypeName: collectionElementTypeName,
+            CollectionElementCategory: collectionElementCategory,
+            CollectionElementSafePropertyName: collectionElementSafePropertyName,
+            CollectionElementGeneratedNamespace: collectionElementGeneratedNamespace,
+            CollectionKeyTypeName: collectionKeyTypeName);
+    }
+
+    /// <summary>
+    /// Extracts type info from an array type symbol (e.g., string[], int[]).
+    /// </summary>
+    private static SerializableTypeInfo ExtractTypeInfoFromArraySymbol(IArrayTypeSymbol arrayType, AttributeData? attr)
+    {
+        var generateSerializer = true;
+        var generateDeserializer = true;
+
+        if (attr != null)
+        {
+            foreach (var namedArg in attr.NamedArguments)
+            {
+                if (namedArg.Key == "GenerateSerializer" && namedArg.Value.Value is bool genSer)
+                    generateSerializer = genSer;
+                else if (namedArg.Key == "GenerateDeserializer" && namedArg.Value.Value is bool genDeser)
+                    generateDeserializer = genDeser;
+            }
+        }
+
+        // Get the element type information
+        var elementType = arrayType.ElementType;
+        var elementCategory = GetPropertyCategory(elementType);
+        var elementTypeName = elementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        // Get safe property names for element type if it's an object
+        string? elementSafePropertyName = null;
+        string? elementGeneratedNamespace = null;
+        if (elementCategory == PropertyCategory.Object && elementType is INamedTypeSymbol elementNamedType)
+        {
+            elementSafePropertyName = GetSafePropertyName(elementNamedType);
+            elementGeneratedNamespace = elementNamedType.ContainingNamespace.IsGlobalNamespace
+                ? null
+                : $"{elementNamedType.ContainingNamespace.ToDisplayString()}.Generated";
+        }
+
+        var safePropertyName = GetSafeArrayName(arrayType);
+        var fullyQualifiedName = arrayType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        return new SerializableTypeInfo(
+            TypeName: safePropertyName,
+            SafePropertyName: safePropertyName,
+            FullyQualifiedName: fullyQualifiedName,
+            Namespace: null, // Arrays don't have a containing namespace in the same way
+            Properties: ImmutableArray<PropertyInfo>.Empty, // Arrays don't have CLR properties we serialize
+            IsRecord: false,
+            IsValueType: false,
+            GenerateSerializer: generateSerializer,
+            GenerateDeserializer: generateDeserializer,
+            CanInstantiate: false, // Can't instantiate arrays with parameterless constructor
+            IsInterface: false,
+            IsAbstract: false,
+            IsPrimitive: false,
+            HasInitOnlyProperties: false,
+            // Collection metadata
+            IsCollection: true,
+            IsDictionaryCollection: false,
+            CollectionElementTypeName: elementTypeName,
+            CollectionElementCategory: elementCategory,
+            CollectionElementSafePropertyName: elementSafePropertyName,
+            CollectionElementGeneratedNamespace: elementGeneratedNamespace,
+            CollectionKeyTypeName: null);
     }
 
     private static void GenerateContextCode(
@@ -808,7 +909,15 @@ internal sealed record SerializableTypeInfo(
     bool IsInterface,
     bool IsAbstract,
     bool IsPrimitive,
-    bool HasInitOnlyProperties);
+    bool HasInitOnlyProperties,
+    // Collection type metadata (for root-level collection serialization)
+    bool IsCollection = false,           // Is this a collection type (List, Array, IEnumerable, Dictionary)?
+    bool IsDictionaryCollection = false, // Is this a dictionary type?
+    string? CollectionElementTypeName = null,         // Element type for collections (value type for dictionaries)
+    PropertyCategory CollectionElementCategory = PropertyCategory.Unknown, // Category of element type
+    string? CollectionElementSafePropertyName = null, // Safe property name for element type
+    string? CollectionElementGeneratedNamespace = null, // Generated namespace for element serializer
+    string? CollectionKeyTypeName = null);  // Key type for dictionaries
 
 /// <summary>
 /// Information about a property to serialize.
