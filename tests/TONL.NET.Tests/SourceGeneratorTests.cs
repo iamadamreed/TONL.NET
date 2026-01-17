@@ -1070,3 +1070,143 @@ public class RootCollectionSerializationTests
         Assert.Contains("RowCount", typeInfo.CollectionElementPropertyNames);
     }
 }
+
+// =============================================================================
+// Test types for nested collection properties (direct serializer)
+// =============================================================================
+
+/// <summary>
+/// Model with nested List of complex objects.
+/// Tests that direct serializer properly handles List&lt;T&gt; properties.
+/// </summary>
+public class ContainerWithNestedList
+{
+    public string Name { get; set; } = "";
+    public List<NestedItem> Items { get; set; } = [];
+}
+
+/// <summary>
+/// Nested item for testing List&lt;T&gt; property serialization.
+/// </summary>
+public class NestedItem
+{
+    public int Id { get; set; }
+    public string Label { get; set; } = "";
+}
+
+/// <summary>
+/// Model with nested List of primitives.
+/// Tests that direct serializer properly handles List&lt;string&gt; properties.
+/// </summary>
+public class ContainerWithPrimitiveList
+{
+    public string Title { get; set; } = "";
+    public List<string> Tags { get; set; } = [];
+}
+
+/// <summary>
+/// Context for testing nested collection properties in direct serializers.
+/// </summary>
+[TonlSourceGenerationOptions]
+[TonlSerializable(typeof(ContainerWithNestedList))]
+[TonlSerializable(typeof(NestedItem))]
+[TonlSerializable(typeof(ContainerWithPrimitiveList))]
+public partial class NestedCollectionContext : TonlSerializerContext { }
+
+/// <summary>
+/// Tests for nested collection property serialization using direct serializers.
+/// This tests the XxxTonlSerializer.SerializeToString() method, not the context-based serialization.
+/// </summary>
+public class NestedCollectionSerializationTests
+{
+    [Fact]
+    public void NestedListOfObjects_DirectSerializer_SerializesItemsNotToString()
+    {
+        var container = new ContainerWithNestedList
+        {
+            Name = "Container1",
+            Items = [
+                new NestedItem { Id = 1, Label = "First" },
+                new NestedItem { Id = 2, Label = "Second" }
+            ]
+        };
+
+        // Use the direct serializer
+        var tonl = TONL.NET.Tests.Generated.ContainerWithNestedListTonlSerializer.SerializeToString(container);
+
+        // Should contain the item data
+        Assert.Contains("Container1", tonl);
+        Assert.Contains("First", tonl);
+        Assert.Contains("Second", tonl);
+        Assert.Contains("1", tonl);
+        Assert.Contains("2", tonl);
+
+        // Should NOT contain the type name (which would happen with .ToString())
+        Assert.DoesNotContain("System.Collections.Generic.List", tonl);
+        Assert.DoesNotContain("NestedItem", tonl);
+    }
+
+    [Fact]
+    public void NestedListOfPrimitives_DirectSerializer_SerializesValues()
+    {
+        var container = new ContainerWithPrimitiveList
+        {
+            Title = "My Title",
+            Tags = ["alpha", "beta", "gamma"]
+        };
+
+        // Use the direct serializer
+        var tonl = TONL.NET.Tests.Generated.ContainerWithPrimitiveListTonlSerializer.SerializeToString(container);
+
+        // Should contain the values
+        Assert.Contains("My Title", tonl);
+        Assert.Contains("alpha", tonl);
+        Assert.Contains("beta", tonl);
+        Assert.Contains("gamma", tonl);
+
+        // Should NOT contain the type name
+        Assert.DoesNotContain("System.Collections.Generic.List", tonl);
+    }
+
+    [Fact]
+    public void NestedListOfObjects_ContextSerializer_SerializesItemsNotToString()
+    {
+        var container = new ContainerWithNestedList
+        {
+            Name = "Container1",
+            Items = [
+                new NestedItem { Id = 1, Label = "First" },
+                new NestedItem { Id = 2, Label = "Second" }
+            ]
+        };
+
+        // Use the context-based serializer
+        var tonl = TonlSerializer.SerializeToString(container, NestedCollectionContext.Default.ContainerWithNestedList);
+
+        // Should contain the item data
+        Assert.Contains("Container1", tonl);
+        Assert.Contains("First", tonl);
+        Assert.Contains("Second", tonl);
+
+        // Should NOT contain the type name
+        Assert.DoesNotContain("System.Collections.Generic.List", tonl);
+    }
+
+    [Fact]
+    public void EmptyNestedList_DirectSerializer_HandlesNull()
+    {
+        var container = new ContainerWithNestedList
+        {
+            Name = "Empty",
+            Items = []
+        };
+
+        // Use the direct serializer
+        var tonl = TONL.NET.Tests.Generated.ContainerWithNestedListTonlSerializer.SerializeToString(container);
+
+        // Should contain the name
+        Assert.Contains("Empty", tonl);
+        // Should not throw and should not contain type name
+        Assert.DoesNotContain("System.Collections.Generic.List", tonl);
+    }
+}
