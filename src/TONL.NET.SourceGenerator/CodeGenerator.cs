@@ -662,18 +662,35 @@ internal static class CodeGenerator
 
             if (prop.ElementCategory == PropertyCategory.Object && prop.ElementSafePropertyName != null && prop.ElementGeneratedNamespace != null)
             {
-                // Collection of objects - tabular format
-                sb.AppendLine($"{codeIndent}    writer.WriteArrayHeader(\"{prop.Name}\", items.Count, {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.PropertyNames);");
-                sb.AppendLine($"{codeIndent}    writer.WriteNewLine();");
-                sb.AppendLine($"{codeIndent}    foreach (var item in items)");
-                sb.AppendLine($"{codeIndent}    {{");
-                sb.AppendLine($"{codeIndent}        if (item is not null)");
-                sb.AppendLine($"{codeIndent}        {{");
-                sb.AppendLine($"{codeIndent}            writer.WriteIndent({indentLevel + 1});");
-                sb.AppendLine($"{codeIndent}            {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.WriteRowInline(ref writer, item);");
-                sb.AppendLine($"{codeIndent}            writer.WriteNewLine();");
-                sb.AppendLine($"{codeIndent}        }}");
-                sb.AppendLine($"{codeIndent}    }}");
+                if (prop.ElementHasOnlyPrimitives)
+                {
+                    // Collection of simple objects - tabular format (WriteRow)
+                    sb.AppendLine($"{codeIndent}    writer.WriteArrayHeader(\"{prop.Name}\", items.Count, {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.PropertyNames);");
+                    sb.AppendLine($"{codeIndent}    writer.WriteNewLine();");
+                    sb.AppendLine($"{codeIndent}    foreach (var item in items)");
+                    sb.AppendLine($"{codeIndent}    {{");
+                    sb.AppendLine($"{codeIndent}        if (item is not null)");
+                    sb.AppendLine($"{codeIndent}        {{");
+                    sb.AppendLine($"{codeIndent}            writer.WriteIndent({indentLevel + 1});");
+                    sb.AppendLine($"{codeIndent}            {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.WriteRowInline(ref writer, item);");
+                    sb.AppendLine($"{codeIndent}            writer.WriteNewLine();");
+                    sb.AppendLine($"{codeIndent}        }}");
+                    sb.AppendLine($"{codeIndent}    }}");
+                }
+                else
+                {
+                    // Collection of complex objects (has nested collections/objects) - block format (WriteProperties)
+                    sb.AppendLine($"{codeIndent}    writer.WritePrimitiveArrayHeader(\"{prop.Name}\", items.Count);");
+                    sb.AppendLine($"{codeIndent}    writer.WriteNewLine();");
+                    sb.AppendLine($"{codeIndent}    foreach (var item in items)");
+                    sb.AppendLine($"{codeIndent}    {{");
+                    sb.AppendLine($"{codeIndent}        if (item is not null)");
+                    sb.AppendLine($"{codeIndent}        {{");
+                    sb.AppendLine($"{codeIndent}            {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.WriteProperties(ref writer, item);");
+                    sb.AppendLine($"{codeIndent}            writer.WriteNewLine();");  // Blank line between items
+                    sb.AppendLine($"{codeIndent}        }}");
+                    sb.AppendLine($"{codeIndent}    }}");
+                }
             }
             else
             {
@@ -1226,18 +1243,34 @@ internal static class CodeGenerator
     }
 
     /// <summary>
-    /// Generates serialization code for root-level list of complex objects (tabular format).
+    /// Generates serialization code for root-level list of complex objects.
+    /// Uses tabular format for simple objects, block format for complex objects.
     /// </summary>
     private static void GenerateRootListOfObjectsWrite(StringBuilder sb, SerializableTypeInfo type, string indent)
     {
-        // Tabular format: write each item as a row
-        sb.AppendLine($"{indent}                foreach (var item in value)");
-        sb.AppendLine($"{indent}                {{");
-        sb.AppendLine($"{indent}                    if (item is not null)");
-        sb.AppendLine($"{indent}                    {{");
-        sb.AppendLine($"{indent}                        {type.CollectionElementGeneratedNamespace}.{type.CollectionElementSafePropertyName}TonlSerializer.WriteRow(ref writer, item);");
-        sb.AppendLine($"{indent}                    }}");
-        sb.AppendLine($"{indent}                }}");
+        if (type.CollectionElementHasOnlyPrimitives)
+        {
+            // Tabular format: write each item as a row
+            sb.AppendLine($"{indent}                foreach (var item in value)");
+            sb.AppendLine($"{indent}                {{");
+            sb.AppendLine($"{indent}                    if (item is not null)");
+            sb.AppendLine($"{indent}                    {{");
+            sb.AppendLine($"{indent}                        {type.CollectionElementGeneratedNamespace}.{type.CollectionElementSafePropertyName}TonlSerializer.WriteRow(ref writer, item);");
+            sb.AppendLine($"{indent}                    }}");
+            sb.AppendLine($"{indent}                }}");
+        }
+        else
+        {
+            // Block format: write each item with its properties on separate lines
+            sb.AppendLine($"{indent}                foreach (var item in value)");
+            sb.AppendLine($"{indent}                {{");
+            sb.AppendLine($"{indent}                    if (item is not null)");
+            sb.AppendLine($"{indent}                    {{");
+            sb.AppendLine($"{indent}                        {type.CollectionElementGeneratedNamespace}.{type.CollectionElementSafePropertyName}TonlSerializer.WriteProperties(ref writer, item);");
+            sb.AppendLine($"{indent}                        writer.WriteNewLine();");  // Blank line between items
+            sb.AppendLine($"{indent}                    }}");
+            sb.AppendLine($"{indent}                }}");
+        }
     }
 
     /// <summary>
@@ -1495,9 +1528,11 @@ internal static class CodeGenerator
     {
         // For arrays/lists, serialize elements
         // Format for primitives: key[N]: val1, val2, val3
-        // Format for objects (per TONL spec): key[N]{col1,col2}:
+        // Format for simple objects: key[N]{col1,col2}:  (tabular)
         //   val1, val2
-        //   val3, val4
+        // Format for complex objects (has nested collections/objects): key[N]:  (block)
+        //   prop1: val1
+        //   prop2[N]: ...
 
         sb.AppendLine("{");
         sb.AppendLine($"                    if ({access} is not null)");
@@ -1505,22 +1540,43 @@ internal static class CodeGenerator
 
         if (prop.ElementCategory == PropertyCategory.Object && prop.ElementSafePropertyName != null && prop.ElementGeneratedNamespace != null)
         {
-            // Collection of complex objects - use tabular format per TONL spec
-            // Format: key[N]{col1,col2}:
-            //           val1, val2
-            //           val3, val4
             sb.AppendLine($"                        var items = {access}.ToList();");
-            sb.AppendLine($"                        // Use element type's property names for column headers");
-            sb.AppendLine($"                        writer.WriteArrayHeader(\"{prop.Name}\", items.Count, {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.PropertyNames);");
-            sb.AppendLine("                        writer.WriteNewLine();");
-            sb.AppendLine("                        foreach (var item in items)");
-            sb.AppendLine("                        {");
-            sb.AppendLine("                            if (item is not null)");
-            sb.AppendLine("                            {");
-            sb.AppendLine($"                                // Use WriteRow for tabular format");
-            sb.AppendLine($"                                {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.WriteRow(ref writer, item);");
-            sb.AppendLine("                            }");
-            sb.AppendLine("                        }");
+
+            if (prop.ElementHasOnlyPrimitives)
+            {
+                // Collection of simple objects - use tabular format per TONL spec
+                // Format: key[N]{col1,col2}:
+                //           val1, val2
+                sb.AppendLine($"                        // Use element type's property names for column headers");
+                sb.AppendLine($"                        writer.WriteArrayHeader(\"{prop.Name}\", items.Count, {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.PropertyNames);");
+                sb.AppendLine("                        writer.WriteNewLine();");
+                sb.AppendLine("                        foreach (var item in items)");
+                sb.AppendLine("                        {");
+                sb.AppendLine("                            if (item is not null)");
+                sb.AppendLine("                            {");
+                sb.AppendLine($"                                // Use WriteRow for tabular format");
+                sb.AppendLine($"                                {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.WriteRow(ref writer, item);");
+                sb.AppendLine("                            }");
+                sb.AppendLine("                        }");
+            }
+            else
+            {
+                // Collection of complex objects - use block format
+                // Format: key[N]:
+                //           prop1: val1
+                //           prop2[N]: ...
+                sb.AppendLine($"                        writer.WritePrimitiveArrayHeader(\"{prop.Name}\", items.Count);");
+                sb.AppendLine("                        writer.WriteNewLine();");
+                sb.AppendLine("                        foreach (var item in items)");
+                sb.AppendLine("                        {");
+                sb.AppendLine("                            if (item is not null)");
+                sb.AppendLine("                            {");
+                sb.AppendLine($"                                // Use WriteProperties for block format");
+                sb.AppendLine($"                                {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.WriteProperties(ref writer, item);");
+                sb.AppendLine("                                writer.WriteNewLine();");  // Blank line between items
+                sb.AppendLine("                            }");
+                sb.AppendLine("                        }");
+            }
         }
         else
         {

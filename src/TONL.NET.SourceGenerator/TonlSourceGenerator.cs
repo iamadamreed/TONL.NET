@@ -127,16 +127,19 @@ public class TonlSourceGenerator : IIncrementalGenerator
             .Select(p =>
             {
                 var category = GetPropertyCategory(p.Type);
-                var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace) =
+                var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace, elementHasOnlyPrimitives) =
                     category == PropertyCategory.Collection
                         ? GetCollectionElementInfo(p.Type)
-                        : (null, PropertyCategory.Unknown, null, false, null, null);
+                        : (null, PropertyCategory.Unknown, null, false, null, null, true);
                 var objectSafePropertyName = category == PropertyCategory.Object
                     ? GetObjectSafePropertyName(p.Type)
                     : null;
                 var objectGeneratedNamespace = category == PropertyCategory.Object
                     ? GetObjectGeneratedNamespace(p.Type)
                     : null;
+                var objectHasOnlyPrimitives = category == PropertyCategory.Object
+                    ? TypeHasOnlyPrimitiveProperties(p.Type)
+                    : true;
 
                 return new PropertyInfo(
                     p.Name,
@@ -153,7 +156,9 @@ public class TonlSourceGenerator : IIncrementalGenerator
                     keyTypeName,
                     objectSafePropertyName,
                     elementGeneratedNamespace,
-                    objectGeneratedNamespace);
+                    objectGeneratedNamespace,
+                    elementHasOnlyPrimitives,
+                    objectHasOnlyPrimitives);
             })
             .ToImmutableArray();
 
@@ -164,6 +169,9 @@ public class TonlSourceGenerator : IIncrementalGenerator
         var hasInitOnlyProps = properties.Any(p => p.IsInitOnly || p.IsRequired);
         var isPrimitive = IsPrimitiveType(typeSymbol) || IsFrameworkType(typeSymbol);
         var canInstantiate = CanInstantiateType(typeSymbol);
+        var hasOnlyPrimitiveProperties = properties.All(p =>
+            p.Category != PropertyCategory.Collection &&
+            p.Category != PropertyCategory.Object);
 
         return new SerializableTypeInfo(
             TypeName: typeSymbol.Name,
@@ -179,7 +187,8 @@ public class TonlSourceGenerator : IIncrementalGenerator
             IsInterface: typeSymbol.TypeKind == TypeKind.Interface,
             IsAbstract: typeSymbol.IsAbstract,
             IsPrimitive: isPrimitive,
-            HasInitOnlyProperties: hasInitOnlyProps);
+            HasInitOnlyProperties: hasInitOnlyProps,
+            HasOnlyPrimitiveProperties: hasOnlyPrimitiveProperties);
     }
 
     private static PropertyCategory GetPropertyCategory(ITypeSymbol type)
@@ -243,7 +252,7 @@ public class TonlSourceGenerator : IIncrementalGenerator
                displayName.Contains("IReadOnlyDictionary<");
     }
 
-    private static (string? ElementTypeName, PropertyCategory ElementCategory, string? ElementSafePropertyName, bool IsDictionary, string? KeyTypeName, string? ElementGeneratedNamespace) GetCollectionElementInfo(ITypeSymbol type)
+    private static (string? ElementTypeName, PropertyCategory ElementCategory, string? ElementSafePropertyName, bool IsDictionary, string? KeyTypeName, string? ElementGeneratedNamespace, bool ElementHasOnlyPrimitives) GetCollectionElementInfo(ITypeSymbol type)
     {
         // Handle arrays
         if (type is IArrayTypeSymbol arrayType)
@@ -255,7 +264,8 @@ public class TonlSourceGenerator : IIncrementalGenerator
                 ? GetSafePropertyName(namedElement)
                 : elementType.Name;
             var elementNamespace = GetGeneratedNamespace(elementType);
-            return (elementTypeName, elementCategory, elementSafePropertyName, false, null, elementNamespace);
+            var elementHasOnlyPrimitives = TypeHasOnlyPrimitiveProperties(elementType);
+            return (elementTypeName, elementCategory, elementSafePropertyName, false, null, elementNamespace, elementHasOnlyPrimitives);
         }
 
         // Handle generic collections
@@ -275,7 +285,8 @@ public class TonlSourceGenerator : IIncrementalGenerator
                     : valueType.Name;
                 var keyTypeName = keyType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 var valueNamespace = GetGeneratedNamespace(valueType);
-                return (valueTypeName, valueCategory, valueSafePropertyName, true, keyTypeName, valueNamespace);
+                var valueHasOnlyPrimitives = TypeHasOnlyPrimitiveProperties(valueType);
+                return (valueTypeName, valueCategory, valueSafePropertyName, true, keyTypeName, valueNamespace, valueHasOnlyPrimitives);
             }
 
             // Other collections (List<T>, IEnumerable<T>, etc.) have 1 type argument
@@ -288,11 +299,12 @@ public class TonlSourceGenerator : IIncrementalGenerator
                     ? GetSafePropertyName(namedElement)
                     : elementType.Name;
                 var elementNamespace = GetGeneratedNamespace(elementType);
-                return (elementTypeName, elementCategory, elementSafePropertyName, false, null, elementNamespace);
+                var elementHasOnlyPrimitives = TypeHasOnlyPrimitiveProperties(elementType);
+                return (elementTypeName, elementCategory, elementSafePropertyName, false, null, elementNamespace, elementHasOnlyPrimitives);
             }
         }
 
-        return (null, PropertyCategory.Unknown, null, false, null, null);
+        return (null, PropertyCategory.Unknown, null, false, null, null, true);
     }
 
     private static string? GetObjectSafePropertyName(ITypeSymbol type)
@@ -356,6 +368,38 @@ public class TonlSourceGenerator : IIncrementalGenerator
             or "global::System.Guid"
             or "global::System.TimeSpan"
             or "global::System.Uri";
+    }
+
+    /// <summary>
+    /// Checks if a type has only primitive properties (no collection or object properties).
+    /// Used to determine whether to use tabular (WriteRow) or block (WriteProperties) format.
+    /// </summary>
+    private static bool TypeHasOnlyPrimitiveProperties(ITypeSymbol type)
+    {
+        if (type is not INamedTypeSymbol namedType)
+            return true;
+
+        // Skip system types - treat as having only primitives
+        var ns = namedType.ContainingNamespace?.ToDisplayString() ?? "";
+        if (ns.StartsWith("System") && !ns.StartsWith("System.Collections"))
+            return true;
+
+        var publicProperties = namedType
+            .GetMembers()
+            .OfType<IPropertySymbol>()
+            .Where(p => p.DeclaredAccessibility == Accessibility.Public &&
+                        p.GetMethod != null &&
+                        !p.IsIndexer &&
+                        !p.IsStatic);
+
+        foreach (var prop in publicProperties)
+        {
+            var category = GetPropertyCategory(prop.Type);
+            if (category == PropertyCategory.Collection || category == PropertyCategory.Object)
+                return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -686,8 +730,8 @@ public class TonlSourceGenerator : IIncrementalGenerator
 
         // Get collection element info for root-level collections
         var (collectionElementTypeName, collectionElementCategory, collectionElementSafePropertyName,
-             _, collectionKeyTypeName, collectionElementGeneratedNamespace) =
-            isRootCollection ? GetCollectionElementInfo(typeSymbol) : (null, PropertyCategory.Unknown, null, false, null, null);
+             _, collectionKeyTypeName, collectionElementGeneratedNamespace, collectionElementHasOnlyPrimitives) =
+            isRootCollection ? GetCollectionElementInfo(typeSymbol) : (null, PropertyCategory.Unknown, null, false, null, null, true);
 
         var publicProperties = typeSymbol
             .GetMembers()
@@ -738,16 +782,19 @@ public class TonlSourceGenerator : IIncrementalGenerator
                 .Select(p =>
                 {
                     var category = GetPropertyCategory(p.Type);
-                    var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace) =
+                    var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace, elementHasOnlyPrimitives) =
                         category == PropertyCategory.Collection
                             ? GetCollectionElementInfo(p.Type)
-                            : (null, PropertyCategory.Unknown, null, false, null, null);
+                            : (null, PropertyCategory.Unknown, null, false, null, null, true);
                     var objectSafePropertyName = category == PropertyCategory.Object
                         ? GetObjectSafePropertyName(p.Type)
                         : null;
                     var objectGeneratedNamespace = category == PropertyCategory.Object
                         ? GetObjectGeneratedNamespace(p.Type)
                         : null;
+                    var objectHasOnlyPrimitives = category == PropertyCategory.Object
+                        ? TypeHasOnlyPrimitiveProperties(p.Type)
+                        : true;
 
                     return new PropertyInfo(
                         p.Name,
@@ -764,7 +811,9 @@ public class TonlSourceGenerator : IIncrementalGenerator
                         keyTypeName,
                         objectSafePropertyName,
                         elementGeneratedNamespace,
-                        objectGeneratedNamespace);
+                        objectGeneratedNamespace,
+                        elementHasOnlyPrimitives,
+                        objectHasOnlyPrimitives);
                 })
                 .ToImmutableArray();
         }
@@ -776,6 +825,9 @@ public class TonlSourceGenerator : IIncrementalGenerator
         var hasInitOnlyProps = properties.Any(p => p.IsInitOnly || p.IsRequired);
         var isPrimitive = IsPrimitiveType(typeSymbol) || IsFrameworkType(typeSymbol);
         var canInstantiate = CanInstantiateType(typeSymbol);
+        var hasOnlyPrimitiveProperties = properties.All(p =>
+            p.Category != PropertyCategory.Collection &&
+            p.Category != PropertyCategory.Object);
 
         return new SerializableTypeInfo(
             TypeName: typeSymbol.Name,
@@ -799,7 +851,9 @@ public class TonlSourceGenerator : IIncrementalGenerator
             CollectionElementCategory: collectionElementCategory,
             CollectionElementSafePropertyName: collectionElementSafePropertyName,
             CollectionElementGeneratedNamespace: collectionElementGeneratedNamespace,
-            CollectionKeyTypeName: collectionKeyTypeName);
+            CollectionKeyTypeName: collectionKeyTypeName,
+            CollectionElementHasOnlyPrimitives: collectionElementHasOnlyPrimitives,
+            HasOnlyPrimitiveProperties: hasOnlyPrimitiveProperties);
     }
 
     /// <summary>
@@ -829,6 +883,7 @@ public class TonlSourceGenerator : IIncrementalGenerator
         // Get safe property names for element type if it's an object
         string? elementSafePropertyName = null;
         string? elementGeneratedNamespace = null;
+        var elementHasOnlyPrimitives = TypeHasOnlyPrimitiveProperties(elementType);
         if (elementCategory == PropertyCategory.Object && elementType is INamedTypeSymbol elementNamedType)
         {
             elementSafePropertyName = GetSafePropertyName(elementNamedType);
@@ -862,7 +917,9 @@ public class TonlSourceGenerator : IIncrementalGenerator
             CollectionElementCategory: elementCategory,
             CollectionElementSafePropertyName: elementSafePropertyName,
             CollectionElementGeneratedNamespace: elementGeneratedNamespace,
-            CollectionKeyTypeName: null);
+            CollectionKeyTypeName: null,
+            CollectionElementHasOnlyPrimitives: elementHasOnlyPrimitives,
+            HasOnlyPrimitiveProperties: true);  // Arrays themselves don't have properties
     }
 
     private static void GenerateContextCode(
@@ -917,7 +974,9 @@ internal sealed record SerializableTypeInfo(
     PropertyCategory CollectionElementCategory = PropertyCategory.Unknown, // Category of element type
     string? CollectionElementSafePropertyName = null, // Safe property name for element type
     string? CollectionElementGeneratedNamespace = null, // Generated namespace for element serializer
-    string? CollectionKeyTypeName = null);  // Key type for dictionaries
+    string? CollectionKeyTypeName = null,  // Key type for dictionaries
+    bool CollectionElementHasOnlyPrimitives = true, // True if collection element type has only primitive properties
+    bool HasOnlyPrimitiveProperties = true);  // True if all properties are primitives (no collections/objects)
 
 /// <summary>
 /// Information about a property to serialize.
@@ -938,7 +997,9 @@ internal sealed record PropertyInfo(
     string? KeyTypeName = null,               // Key type for dictionaries
     string? ObjectSafePropertyName = null,    // Safe property name for nested object context lookup
     string? ElementGeneratedNamespace = null, // Generated namespace for element type serializer
-    string? ObjectGeneratedNamespace = null); // Generated namespace for nested object serializer
+    string? ObjectGeneratedNamespace = null,  // Generated namespace for nested object serializer
+    bool ElementHasOnlyPrimitives = true,     // True if collection element type has only primitive properties
+    bool ObjectHasOnlyPrimitives = true);     // True if nested object type has only primitive properties
 
 /// <summary>
 /// Categories of property types for serialization dispatch.
