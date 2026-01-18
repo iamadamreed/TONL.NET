@@ -869,9 +869,95 @@ internal static class CodeGenerator
             case PropertyCategory.Enum:
                 sb.AppendLine($"            writer.WriteInt64(Convert.ToInt64({valueAccess}));");
                 break;
+            case PropertyCategory.Collection:
+                GenerateRowValueWriteForCollection(sb, prop, access);
+                break;
+            case PropertyCategory.Object:
+                GenerateRowValueWriteForObject(sb, prop, access);
+                break;
             default:
                 sb.AppendLine($"            writer.WriteStringValue({access}?.ToString() ?? \"\");");
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Generates code to write a collection property value in tabular row format.
+    /// Collections are serialized inline within the cell.
+    /// </summary>
+    private static void GenerateRowValueWriteForCollection(StringBuilder sb, PropertyInfo prop, string access)
+    {
+        // For tabular rows, serialize collection inline
+        // Primitives: join with semicolon delimiter
+        // Objects: use WriteRowInline for each element
+
+        sb.AppendLine($"            if ({access} is null || !{access}.Any())");
+        sb.AppendLine($"                writer.WriteStringValue(\"\");");
+        sb.AppendLine($"            else");
+        sb.AppendLine($"            {{");
+
+        if (prop.IsDictionary)
+        {
+            // Dictionary - serialize as key=value pairs
+            if (prop.ElementCategory == PropertyCategory.Object && prop.ElementSafePropertyName != null && prop.ElementGeneratedNamespace != null)
+            {
+                // Dictionary with object values - use WriteRowInline for each value
+                sb.AppendLine($"                var isFirst = true;");
+                sb.AppendLine($"                foreach (var kvp in {access})");
+                sb.AppendLine($"                {{");
+                sb.AppendLine($"                    if (!isFirst) writer.WriteByte((byte)';');");
+                sb.AppendLine($"                    isFirst = false;");
+                sb.AppendLine($"                    writer.WriteStringValue(kvp.Key?.ToString() ?? \"\");");
+                sb.AppendLine($"                    writer.WriteByte((byte)'=');");
+                sb.AppendLine($"                    {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.WriteRowInline(ref writer, kvp.Value);");
+                sb.AppendLine($"                }}");
+            }
+            else
+            {
+                // Dictionary with primitive values - serialize as key=value pairs
+                sb.AppendLine($"                var joined = string.Join(\";\", {access}.Select(kvp => $\"{{kvp.Key}}={{kvp.Value}}\"));");
+                sb.AppendLine($"                writer.WriteStringValue(joined);");
+            }
+        }
+        else if (prop.ElementCategory == PropertyCategory.Object && prop.ElementSafePropertyName != null && prop.ElementGeneratedNamespace != null)
+        {
+            // List/Array of objects - use WriteRowInline for each element with inner delimiter
+            sb.AppendLine($"                var isFirst = true;");
+            sb.AppendLine($"                foreach (var item in {access})");
+            sb.AppendLine($"                {{");
+            sb.AppendLine($"                    if (!isFirst) writer.WriteByte((byte)';');");
+            sb.AppendLine($"                    isFirst = false;");
+            sb.AppendLine($"                    {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.WriteRowInline(ref writer, item);");
+            sb.AppendLine($"                }}");
+        }
+        else
+        {
+            // List/Array of primitives - join with semicolon
+            sb.AppendLine($"                var joined = string.Join(\";\", {access});");
+            sb.AppendLine($"                writer.WriteStringValue(joined);");
+        }
+
+        sb.AppendLine($"            }}");
+    }
+
+    /// <summary>
+    /// Generates code to write an object property value in tabular row format.
+    /// Objects are serialized inline using WriteRowInline.
+    /// </summary>
+    private static void GenerateRowValueWriteForObject(StringBuilder sb, PropertyInfo prop, string access)
+    {
+        if (prop.ObjectSafePropertyName != null && prop.ObjectGeneratedNamespace != null)
+        {
+            // Use WriteRowInline for the nested object
+            sb.AppendLine($"            if ({access} is null)");
+            sb.AppendLine($"                writer.WriteStringValue(\"\");");
+            sb.AppendLine($"            else");
+            sb.AppendLine($"                {prop.ObjectGeneratedNamespace}.{prop.ObjectSafePropertyName}TonlSerializer.WriteRowInline(ref writer, {access});");
+        }
+        else
+        {
+            // Fallback to ToString if no serializer available
+            sb.AppendLine($"            writer.WriteStringValue({access}?.ToString() ?? \"\");");
         }
     }
 

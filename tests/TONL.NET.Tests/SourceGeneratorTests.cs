@@ -1210,3 +1210,264 @@ public class NestedCollectionSerializationTests
         Assert.DoesNotContain("System.Collections.Generic.List", tonl);
     }
 }
+
+// =============================================================================
+// Test types for WriteRow/WriteRowInline with nested collections (tabular format)
+// =============================================================================
+
+/// <summary>
+/// Model with List&lt;string&gt; property to test WriteRow serialization.
+/// Similar to SRS.Service.Mcp ConstraintInfo which has List&lt;string&gt; Columns.
+/// </summary>
+public class ConstraintInfoLike
+{
+    public string ConstraintName { get; set; } = "";
+    public string TableName { get; set; } = "";
+    public List<string> Columns { get; set; } = [];
+}
+
+/// <summary>
+/// Parameter info for testing nested object collections in WriteRow.
+/// Similar to SRS.Service.Mcp ParameterInfo.
+/// </summary>
+public class ParameterInfoLike
+{
+    public string Name { get; set; } = "";
+    public string DataType { get; set; } = "";
+}
+
+/// <summary>
+/// Model with List&lt;Object&gt; property to test WriteRow serialization.
+/// Similar to SRS.Service.Mcp StoredProcedureInfo which has List&lt;ParameterInfo&gt; Parameters.
+/// </summary>
+public class StoredProcedureLike
+{
+    public string ProcedureName { get; set; } = "";
+    public string Schema { get; set; } = "";
+    public List<ParameterInfoLike> Parameters { get; set; } = [];
+}
+
+/// <summary>
+/// Wrapper to contain a list of objects with collection properties.
+/// This forces WriteRow to be used when serializing the inner objects.
+/// </summary>
+public class ConstraintListWrapper
+{
+    public string TableSchema { get; set; } = "";
+    public List<ConstraintInfoLike> Constraints { get; set; } = [];
+}
+
+/// <summary>
+/// Wrapper to contain a list of objects with nested object collections.
+/// </summary>
+public class ProcedureListWrapper
+{
+    public string DatabaseName { get; set; } = "";
+    public List<StoredProcedureLike> Procedures { get; set; } = [];
+}
+
+/// <summary>
+/// Context for testing WriteRow with nested collections.
+/// </summary>
+[TonlSourceGenerationOptions]
+[TonlSerializable(typeof(ConstraintInfoLike))]
+[TonlSerializable(typeof(ParameterInfoLike))]
+[TonlSerializable(typeof(StoredProcedureLike))]
+[TonlSerializable(typeof(ConstraintListWrapper))]
+[TonlSerializable(typeof(ProcedureListWrapper))]
+[TonlSerializable(typeof(List<ConstraintInfoLike>))]
+[TonlSerializable(typeof(List<StoredProcedureLike>))]
+public partial class WriteRowTestContext : TonlSerializerContext { }
+
+/// <summary>
+/// Tests for WriteRow/WriteRowInline with nested collections.
+/// These specifically test the tabular row format where collections within objects are serialized.
+/// </summary>
+public class WriteRowCollectionTests
+{
+    [Fact]
+    public void WriteRow_ObjectWithListOfStrings_SerializesColumnValues()
+    {
+        // Test: When ConstraintInfoLike is serialized in a tabular row (WriteRow),
+        // its Columns property should show actual values, not "System.Collections.Generic.List`1[...]"
+        var constraints = new List<ConstraintInfoLike>
+        {
+            new()
+            {
+                ConstraintName = "PK_Users",
+                TableName = "Users",
+                Columns = ["UserId", "TenantId"]
+            },
+            new()
+            {
+                ConstraintName = "UQ_Email",
+                TableName = "Users",
+                Columns = ["Email"]
+            }
+        };
+
+        // Use root collection serialization which internally uses WriteRow for each item
+        var tonl = TonlSerializer.SerializeToString(constraints, WriteRowTestContext.Default.ListOfConstraintInfoLike);
+
+        // Should contain the column values
+        Assert.Contains("UserId", tonl);
+        Assert.Contains("TenantId", tonl);
+        Assert.Contains("Email", tonl);
+
+        // Should NOT contain the type name (which happens with .ToString())
+        Assert.DoesNotContain("System.Collections.Generic.List", tonl);
+    }
+
+    [Fact]
+    public void WriteRow_ObjectWithListOfObjects_SerializesParameterData()
+    {
+        // Test: When StoredProcedureLike is serialized in a tabular row (WriteRow),
+        // its Parameters property should show actual parameter data, not type name
+        var procedures = new List<StoredProcedureLike>
+        {
+            new()
+            {
+                ProcedureName = "GetUsers",
+                Schema = "dbo",
+                Parameters = [
+                    new() { Name = "@TenantId", DataType = "int" },
+                    new() { Name = "@Active", DataType = "bit" }
+                ]
+            }
+        };
+
+        // Use root collection serialization which internally uses WriteRow
+        var tonl = TonlSerializer.SerializeToString(procedures, WriteRowTestContext.Default.ListOfStoredProcedureLike);
+
+        // Should contain the procedure and parameter data
+        Assert.Contains("GetUsers", tonl);
+        Assert.Contains("dbo", tonl);
+        Assert.Contains("@TenantId", tonl);
+        Assert.Contains("int", tonl);
+        Assert.Contains("@Active", tonl);
+        Assert.Contains("bit", tonl);
+
+        // Should NOT contain the type names
+        Assert.DoesNotContain("System.Collections.Generic.List", tonl);
+        Assert.DoesNotContain("ParameterInfoLike", tonl);
+    }
+
+    [Fact]
+    public void WriteRow_NestedWrapper_ObjectWithListOfStrings_Works()
+    {
+        // Test nested serialization: wrapper contains list of objects with List<string> properties
+        var wrapper = new ConstraintListWrapper
+        {
+            TableSchema = "dbo",
+            Constraints = [
+                new()
+                {
+                    ConstraintName = "PK_Orders",
+                    TableName = "Orders",
+                    Columns = ["OrderId"]
+                },
+                new()
+                {
+                    ConstraintName = "FK_Orders_Users",
+                    TableName = "Orders",
+                    Columns = ["UserId", "TenantId"]
+                }
+            ]
+        };
+
+        var tonl = TonlSerializer.SerializeToString(wrapper, WriteRowTestContext.Default.ConstraintListWrapper);
+
+        // Should contain all the data
+        Assert.Contains("dbo", tonl);
+        Assert.Contains("PK_Orders", tonl);
+        Assert.Contains("OrderId", tonl);
+        Assert.Contains("FK_Orders_Users", tonl);
+        Assert.Contains("UserId", tonl);
+        Assert.Contains("TenantId", tonl);
+
+        // Should NOT contain type names
+        Assert.DoesNotContain("System.Collections.Generic.List", tonl);
+    }
+
+    [Fact]
+    public void WriteRow_DirectSerializer_ObjectWithListOfStrings_Works()
+    {
+        // Test using the direct serializer's SerializeToString method
+        var constraint = new ConstraintInfoLike
+        {
+            ConstraintName = "PK_Test",
+            TableName = "Test",
+            Columns = ["Col1", "Col2", "Col3"]
+        };
+
+        var tonl = TONL.NET.Tests.Generated.ConstraintInfoLikeTonlSerializer.SerializeToString(constraint);
+
+        // Should contain the column values
+        Assert.Contains("Col1", tonl);
+        Assert.Contains("Col2", tonl);
+        Assert.Contains("Col3", tonl);
+
+        // Should NOT contain type name
+        Assert.DoesNotContain("System.Collections.Generic.List", tonl);
+    }
+
+    [Fact]
+    public void WriteRow_DirectSerializer_ObjectWithListOfObjects_Works()
+    {
+        // Test using the direct serializer's SerializeToString method
+        var procedure = new StoredProcedureLike
+        {
+            ProcedureName = "TestProc",
+            Schema = "dbo",
+            Parameters = [
+                new() { Name = "@Param1", DataType = "varchar" },
+                new() { Name = "@Param2", DataType = "int" }
+            ]
+        };
+
+        var tonl = TONL.NET.Tests.Generated.StoredProcedureLikeTonlSerializer.SerializeToString(procedure);
+
+        // Should contain the parameter data
+        Assert.Contains("@Param1", tonl);
+        Assert.Contains("varchar", tonl);
+        Assert.Contains("@Param2", tonl);
+        Assert.Contains("int", tonl);
+
+        // Should NOT contain type names
+        Assert.DoesNotContain("System.Collections.Generic.List", tonl);
+        Assert.DoesNotContain("ParameterInfoLike", tonl);
+    }
+
+    [Fact]
+    public void WriteRow_EmptyListOfStrings_DoesNotShowTypeName()
+    {
+        var constraint = new ConstraintInfoLike
+        {
+            ConstraintName = "CK_Test",
+            TableName = "Test",
+            Columns = [] // Empty list
+        };
+
+        var tonl = TONL.NET.Tests.Generated.ConstraintInfoLikeTonlSerializer.SerializeToString(constraint);
+
+        // Should NOT contain type name
+        Assert.DoesNotContain("System.Collections.Generic.List", tonl);
+    }
+
+    [Fact]
+    public void WriteRow_NullListOfStrings_HandledGracefully()
+    {
+        var constraint = new ConstraintInfoLike
+        {
+            ConstraintName = "CK_Test",
+            TableName = "Test",
+            Columns = null! // Null list
+        };
+
+        // Should not throw
+        var tonl = TONL.NET.Tests.Generated.ConstraintInfoLikeTonlSerializer.SerializeToString(constraint);
+
+        // Should NOT contain type name
+        Assert.DoesNotContain("System.Collections.Generic.List", tonl);
+    }
+}
