@@ -44,14 +44,14 @@ jobs:
         run: dotnet test --no-build -c Release --logger trx --results-directory TestResults
 
       - name: Upload test results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results
           path: TestResults
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: build-output
           path: |
@@ -142,7 +142,7 @@ jobs:
         run: dotnet pack src/TONL.NET.Core/TONL.NET.Core.csproj -c Release -p:Version=${{ steps.version.outputs.VERSION }} -o ./nupkg --no-build
 
       - name: Generate attestation
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: ./nupkg/*.nupkg
 
