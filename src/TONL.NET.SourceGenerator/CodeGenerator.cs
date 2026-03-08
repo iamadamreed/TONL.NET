@@ -680,7 +680,7 @@ internal static class CodeGenerator
                 else
                 {
                     // Collection of complex objects (has nested collections/objects) - block format (WriteProperties)
-                    sb.AppendLine($"{codeIndent}    writer.WritePrimitiveArrayHeader(\"{prop.Name}\", items.Count);");
+                    sb.AppendLine($"{codeIndent}    writer.WriteArrayHeader(\"{prop.Name}\", items.Count, {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.PropertyNames);");
                     sb.AppendLine($"{codeIndent}    writer.WriteNewLine();");
                     sb.AppendLine($"{codeIndent}    foreach (var item in items)");
                     sb.AppendLine($"{codeIndent}    {{");
@@ -818,8 +818,8 @@ internal static class CodeGenerator
             sb.AppendLine($"{codeIndent}if ({access} is not null)");
             sb.AppendLine($"{codeIndent}{{");
             sb.AppendLine($"{codeIndent}    writer.WriteObjectHeader(\"{prop.Name}\", {prop.ObjectGeneratedNamespace}.{prop.ObjectSafePropertyName}TonlSerializer.PropertyNames);");
-            sb.AppendLine($"{codeIndent}    writer.WriteByte((byte)' ');");
-            sb.AppendLine($"{codeIndent}    {prop.ObjectGeneratedNamespace}.{prop.ObjectSafePropertyName}TonlSerializer.WriteRowInline(ref writer, {access});");
+            sb.AppendLine($"{codeIndent}    writer.WriteNewLine();");
+            sb.AppendLine($"{codeIndent}    {prop.ObjectGeneratedNamespace}.{prop.ObjectSafePropertyName}TonlSerializer.WriteProperties(ref writer, {access});");
             sb.AppendLine($"{codeIndent}}}");
             sb.AppendLine($"{codeIndent}else");
             sb.AppendLine($"{codeIndent}{{");
@@ -1562,10 +1562,10 @@ internal static class CodeGenerator
             else
             {
                 // Collection of complex objects - use block format
-                // Format: key[N]:
+                // Format: key[N]{col1,col2,...}:
                 //           prop1: val1
-                //           prop2[N]: ...
-                sb.AppendLine($"                        writer.WritePrimitiveArrayHeader(\"{prop.Name}\", items.Count);");
+                //           prop2[N]{...}: ...
+                sb.AppendLine($"                        writer.WriteArrayHeader(\"{prop.Name}\", items.Count, {prop.ElementGeneratedNamespace}.{prop.ElementSafePropertyName}TonlSerializer.PropertyNames);");
                 sb.AppendLine("                        writer.WriteNewLine();");
                 sb.AppendLine("                        foreach (var item in items)");
                 sb.AppendLine("                        {");
@@ -1650,18 +1650,15 @@ internal static class CodeGenerator
 
     private static void GenerateNestedObjectWrite(StringBuilder sb, PropertyInfo prop, string access)
     {
-        // For nested objects, use inline format per TONL spec: key{col1,col2}: val1, val2
-        // Or if values don't fit inline, use block format with WriteRow
+        // For nested objects, use block format per TONL spec
         if (prop.ObjectSafePropertyName != null && prop.ObjectGeneratedNamespace != null)
         {
             sb.AppendLine("{");
             sb.AppendLine($"                    if ({access} is not null)");
             sb.AppendLine("                    {");
-            sb.AppendLine($"                        // Use inline object format per TONL spec: key{{col1,col2}}: val1, val2");
             sb.AppendLine($"                        writer.WriteObjectHeader(\"{prop.Name}\", {prop.ObjectGeneratedNamespace}.{prop.ObjectSafePropertyName}TonlSerializer.PropertyNames);");
-            sb.AppendLine("                        writer.WriteByte((byte)' ');");
-            sb.AppendLine($"                        // Write values inline using WriteRow (without the indent and newline)");
-            sb.AppendLine($"                        {prop.ObjectGeneratedNamespace}.{prop.ObjectSafePropertyName}TonlSerializer.WriteRowInline(ref writer, {access});");
+            sb.AppendLine("                        writer.WriteNewLine();");
+            sb.AppendLine($"                        {prop.ObjectGeneratedNamespace}.{prop.ObjectSafePropertyName}TonlSerializer.WriteProperties(ref writer, {access});");
             sb.AppendLine("                    }");
             sb.AppendLine("                    else");
             sb.AppendLine("                    {");

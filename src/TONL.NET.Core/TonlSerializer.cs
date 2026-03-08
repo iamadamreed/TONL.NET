@@ -999,30 +999,201 @@ public static class TonlSerializer
             {
                 if (arrColumns.Length > 0)
                 {
-                    // Tabular array - read the next arrCount lines as rows
-                    var rows = new List<Dictionary<string, object?>>();
-                    var fields = fieldsBuffer.Slice(0, Math.Min(arrColumns.Length + 1, fieldsBuffer.Length));
-                    for (int i = 0; i < arrCount && reader.ReadLine(out var rowLine); i++)
+                    // Detect whether the content is block format or tabular format.
+                    // Peek at the first non-empty, non-comment content line.
+                    // If it looks like "identifier: value" or "identifier{...}:" or "identifier[...]:"
+                    // then it is block format; otherwise it is tabular (comma-delimited rows).
+                    bool isBlockFormat = false;
+                    if (reader.TryPeekLine(out var peekLine))
                     {
-                        var rowTrimmed = rowLine;
-                        while (rowTrimmed.Length > 0 && (rowTrimmed[0] == (byte)' ' || rowTrimmed[0] == (byte)'\t'))
+                        var peekTrimmed = peekLine;
+                        while (peekTrimmed.Length > 0 && (peekTrimmed[0] == (byte)' ' || peekTrimmed[0] == (byte)'\t'))
                         {
-                            rowTrimmed = rowTrimmed.Slice(1);
+                            peekTrimmed = peekTrimmed.Slice(1);
                         }
-
-                        if (rowTrimmed.IsEmpty) continue;
-
-                        int fieldCount = reader.ParseFields(rowTrimmed, fields);
-
-                        var row = new Dictionary<string, object?>();
-                        for (int j = 0; j < Math.Min(fieldCount, arrColumns.Length); j++)
+                        if (!peekTrimmed.IsEmpty && peekTrimmed[0] != (byte)'#')
                         {
-                            var fieldSpan = rowTrimmed[fields[j]];
-                            row[arrColumns[j]] = reader.ParsePrimitiveValue(fieldSpan);
+                            isBlockFormat = IsBlockFormatLine(peekTrimmed);
                         }
-                        rows.Add(row);
                     }
-                    currentDict[arrKey] = rows;
+
+                    if (!isBlockFormat)
+                    {
+                        // Tabular array - read the next arrCount lines as rows
+                        var rows = new List<Dictionary<string, object?>>();
+                        var fields = fieldsBuffer.Slice(0, Math.Min(arrColumns.Length + 1, fieldsBuffer.Length));
+                        for (int i = 0; i < arrCount && reader.ReadLine(out var rowLine); i++)
+                        {
+                            var rowTrimmed = rowLine;
+                            while (rowTrimmed.Length > 0 && (rowTrimmed[0] == (byte)' ' || rowTrimmed[0] == (byte)'\t'))
+                            {
+                                rowTrimmed = rowTrimmed.Slice(1);
+                            }
+
+                            if (rowTrimmed.IsEmpty) continue;
+
+                            int fieldCount = reader.ParseFields(rowTrimmed, fields);
+
+                            var row = new Dictionary<string, object?>();
+                            for (int j = 0; j < Math.Min(fieldCount, arrColumns.Length); j++)
+                            {
+                                var fieldSpan = rowTrimmed[fields[j]];
+                                row[arrColumns[j]] = reader.ParsePrimitiveValue(fieldSpan);
+                            }
+                            rows.Add(row);
+                        }
+                        currentDict[arrKey] = rows;
+                    }
+                    else
+                    {
+                        // Block-format array: items are consecutive key-value blocks.
+                        // The first column name reappearing signals the start of a new item.
+                        var blockItems = new List<Dictionary<string, object?>>();
+                        var arrayIndent = currentIndent;
+
+                        // Determine the first column name (strip type hint, e.g. "id:u32" -> "id")
+                        string firstColName = StripTypeHintFromColumnName(arrColumns[0]);
+
+                        if (arrCount > 0)
+                        {
+                            var itemStack = new Stack<(Dictionary<string, object?> dict, int indent)>();
+                            var currentItem = new Dictionary<string, object?>();
+                            blockItems.Add(currentItem);
+                            itemStack.Push((currentItem, arrayIndent));
+
+                            while (reader.TryPeekLine(out var nextLine))
+                            {
+                                var nextTrimmed = nextLine;
+                                while (nextTrimmed.Length > 0 && (nextTrimmed[0] == (byte)' ' || nextTrimmed[0] == (byte)'\t'))
+                                {
+                                    nextTrimmed = nextTrimmed.Slice(1);
+                                }
+
+                                if (nextTrimmed.IsEmpty || nextTrimmed[0] == (byte)'#')
+                                {
+                                    reader.ReadLine(out _); // consume blank/comment lines
+                                    continue;
+                                }
+
+                                int nextIndent = TonlReader.GetIndentLevel(nextLine);
+
+                                // Stop if indentation returns to array level or lower
+                                if (nextIndent <= arrayIndent)
+                                {
+                                    break;
+                                }
+
+                                // Check if this line starts a new item (first column at item indent level)
+                                // Items are at arrayIndent+1 depth
+                                if (nextIndent == arrayIndent + 1 && blockItems.Count < arrCount)
+                                {
+                                    // Check if this line starts with firstColName followed by ':' or '{' or '['
+                                    if (IsLineStartingWithKey(nextTrimmed, firstColName) && currentItem.Count > 0)
+                                    {
+                                        // Start a new item
+                                        currentItem = new Dictionary<string, object?>();
+                                        blockItems.Add(currentItem);
+                                        itemStack.Clear();
+                                        itemStack.Push((currentItem, arrayIndent));
+                                    }
+                                }
+
+                                // Pop item stack until we're at the right level
+                                while (itemStack.Count > 1 && itemStack.Peek().indent >= nextIndent)
+                                {
+                                    itemStack.Pop();
+                                }
+
+                                var targetDict = itemStack.Peek().dict;
+
+                                // Consume the line
+                                reader.ReadLine(out _);
+
+                                // Parse this line using the same logic as the main loop
+                                if (reader.TryParseArrayHeader(nextTrimmed, out var nestedArrKey, out var nestedArrCount, out var nestedArrColumns))
+                                {
+                                    if (nestedArrColumns.Length > 0)
+                                    {
+                                        // Nested tabular array within block item
+                                        var nestedRows = new List<Dictionary<string, object?>>();
+                                        var nestedFields = fieldsBuffer.Slice(0, Math.Min(nestedArrColumns.Length + 1, fieldsBuffer.Length));
+                                        for (int i = 0; i < nestedArrCount && reader.ReadLine(out var nestedRowLine); i++)
+                                        {
+                                            var nestedRowTrimmed = nestedRowLine;
+                                            while (nestedRowTrimmed.Length > 0 && (nestedRowTrimmed[0] == (byte)' ' || nestedRowTrimmed[0] == (byte)'\t'))
+                                            {
+                                                nestedRowTrimmed = nestedRowTrimmed.Slice(1);
+                                            }
+                                            if (nestedRowTrimmed.IsEmpty) continue;
+                                            int nestedFieldCount = reader.ParseFields(nestedRowTrimmed, nestedFields);
+                                            var nestedRow = new Dictionary<string, object?>();
+                                            for (int j = 0; j < Math.Min(nestedFieldCount, nestedArrColumns.Length); j++)
+                                            {
+                                                var nestedFieldSpan = nestedRowTrimmed[nestedFields[j]];
+                                                nestedRow[nestedArrColumns[j]] = reader.ParsePrimitiveValue(nestedFieldSpan);
+                                            }
+                                            nestedRows.Add(nestedRow);
+                                        }
+                                        targetDict[nestedArrKey] = nestedRows;
+                                    }
+                                    else
+                                    {
+                                        // Primitive nested array - inline values
+                                        int nestedColonIdx = nextTrimmed.LastIndexOf((byte)':');
+                                        if (nestedColonIdx >= 0 && nestedColonIdx < nextTrimmed.Length - 1)
+                                        {
+                                            var valuesPart = nextTrimmed.Slice(nestedColonIdx + 1);
+                                            while (valuesPart.Length > 0 && valuesPart[0] == (byte)' ')
+                                                valuesPart = valuesPart.Slice(1);
+                                            if (!valuesPart.IsEmpty)
+                                            {
+                                                int maxFields = Math.Max(nestedArrCount, 16);
+                                                var nestedFields2 = maxFields <= fieldsBuffer.Length
+                                                    ? fieldsBuffer.Slice(0, maxFields)
+                                                    : new Range[maxFields];
+                                                int nestedFieldCount2 = reader.ParseFields(valuesPart, nestedFields2);
+                                                var nestedItems = new List<object?>();
+                                                for (int i = 0; i < nestedFieldCount2; i++)
+                                                    nestedItems.Add(reader.ParsePrimitiveValue(valuesPart[nestedFields2[i]]));
+                                                targetDict[nestedArrKey] = nestedItems;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // Nested block array - create a list and push onto item stack for further processing
+                                            var nestedList = new Dictionary<string, object?>();
+                                            targetDict[nestedArrKey] = nestedList;
+                                            itemStack.Push((nestedList, nextIndent));
+                                        }
+                                    }
+                                }
+                                else if (reader.TryParseInlineObject(nextTrimmed, out var nestedInlineKey, out var nestedInlineColumns, out var nestedInlineValuesSpan))
+                                {
+                                    var nestedInlineDict = new Dictionary<string, object?>();
+                                    var nestedInlineFields = fieldsBuffer.Slice(0, Math.Min(nestedInlineColumns.Length + 1, fieldsBuffer.Length));
+                                    int nestedInlineFieldCount = reader.ParseFields(nestedInlineValuesSpan, nestedInlineFields);
+                                    for (int j = 0; j < Math.Min(nestedInlineFieldCount, nestedInlineColumns.Length); j++)
+                                    {
+                                        var nestedFieldSpan = nestedInlineValuesSpan[nestedInlineFields[j]];
+                                        nestedInlineDict[nestedInlineColumns[j]] = reader.ParsePrimitiveValue(nestedFieldSpan);
+                                    }
+                                    targetDict[nestedInlineKey] = nestedInlineDict;
+                                }
+                                else if (reader.TryParseObjectHeader(nextTrimmed, out var nestedObjKey, out _))
+                                {
+                                    var nestedObjDict = new Dictionary<string, object?>();
+                                    targetDict[nestedObjKey] = nestedObjDict;
+                                    itemStack.Push((nestedObjDict, nextIndent));
+                                }
+                                else if (reader.TryParseKeyValue(nextTrimmed, out var nestedKvKey, out var nestedKvValue))
+                                {
+                                    targetDict[nestedKvKey] = nestedKvValue;
+                                }
+                            }
+                        }
+
+                        currentDict[arrKey] = blockItems;
+                    }
                 }
                 else
                 {
@@ -1374,6 +1545,84 @@ public static class TonlSerializer
             }
         }
         return -1;
+    }
+
+    /// <summary>
+    /// Determines whether a trimmed line is in block format (key: value or key{...}: or key[N]:)
+    /// rather than a tabular comma-delimited row.
+    /// Heuristic: if the text before the first ':', '{', or '[' looks like an identifier
+    /// (letters, digits, underscores — no spaces, no commas), it is block format.
+    /// </summary>
+    private static bool IsBlockFormatLine(ReadOnlySpan<byte> trimmedLine)
+    {
+        // Walk through characters looking for a structural character
+        for (int i = 0; i < trimmedLine.Length; i++)
+        {
+            byte c = trimmedLine[i];
+            if (c == (byte)':' || c == (byte)'{' || c == (byte)'[')
+            {
+                // Only block format if the prefix (key) is non-empty and identifier-like
+                if (i == 0) return false;
+                return IsIdentifierLike(trimmedLine.Slice(0, i));
+            }
+            // A comma or space before any structural character → tabular
+            if (c == (byte)',' || c == (byte)' ' || c == (byte)'\t')
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true if the span looks like an identifier (ASCII letters, digits, underscores, hyphens, dots).
+    /// </summary>
+    private static bool IsIdentifierLike(ReadOnlySpan<byte> span)
+    {
+        if (span.IsEmpty) return false;
+        foreach (byte b in span)
+        {
+            if (!IsIdentifierChar(b)) return false;
+        }
+        return true;
+    }
+
+    private static bool IsIdentifierChar(byte b)
+    {
+        return (b >= (byte)'a' && b <= (byte)'z')
+            || (b >= (byte)'A' && b <= (byte)'Z')
+            || (b >= (byte)'0' && b <= (byte)'9')
+            || b == (byte)'_'
+            || b == (byte)'-'
+            || b == (byte)'.';
+    }
+
+    /// <summary>
+    /// Strips a type hint from a column name. E.g. "id:u32" -> "id".
+    /// </summary>
+    private static string StripTypeHintFromColumnName(string columnName)
+    {
+        int colonIdx = columnName.IndexOf(':');
+        return colonIdx >= 0 ? columnName.Substring(0, colonIdx) : columnName;
+    }
+
+    /// <summary>
+    /// Returns true if the trimmed line starts with the given key name followed immediately
+    /// by ':', '{', or '[' (i.e., this is a field named <paramref name="keyName"/>).
+    /// </summary>
+    private static bool IsLineStartingWithKey(ReadOnlySpan<byte> trimmedLine, string keyName)
+    {
+        if (trimmedLine.Length <= keyName.Length) return false;
+
+        // Check the key bytes match
+        for (int i = 0; i < keyName.Length; i++)
+        {
+            if (trimmedLine[i] != (byte)keyName[i]) return false;
+        }
+
+        // The character after the key must be ':', '{', or '['
+        byte next = trimmedLine[keyName.Length];
+        return next == (byte)':' || next == (byte)'{' || next == (byte)'[';
     }
 
     #endregion
