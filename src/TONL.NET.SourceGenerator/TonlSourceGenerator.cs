@@ -127,16 +127,19 @@ public class TonlSourceGenerator : IIncrementalGenerator
             .Select(p =>
             {
                 var category = GetPropertyCategory(p.Type);
-                var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace) =
+                var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace, elementHasOnlyPrimitives) =
                     category == PropertyCategory.Collection
                         ? GetCollectionElementInfo(p.Type)
-                        : (null, PropertyCategory.Unknown, null, false, null, null);
+                        : (null, PropertyCategory.Unknown, null, false, null, null, true);
                 var objectSafePropertyName = category == PropertyCategory.Object
                     ? GetObjectSafePropertyName(p.Type)
                     : null;
                 var objectGeneratedNamespace = category == PropertyCategory.Object
                     ? GetObjectGeneratedNamespace(p.Type)
                     : null;
+                var objectHasOnlyPrimitives = category == PropertyCategory.Object
+                    ? TypeHasOnlyPrimitiveProperties(p.Type)
+                    : true;
 
                 return new PropertyInfo(
                     p.Name,
@@ -153,7 +156,9 @@ public class TonlSourceGenerator : IIncrementalGenerator
                     keyTypeName,
                     objectSafePropertyName,
                     elementGeneratedNamespace,
-                    objectGeneratedNamespace);
+                    objectGeneratedNamespace,
+                    elementHasOnlyPrimitives,
+                    objectHasOnlyPrimitives);
             })
             .ToImmutableArray();
 
@@ -164,6 +169,9 @@ public class TonlSourceGenerator : IIncrementalGenerator
         var hasInitOnlyProps = properties.Any(p => p.IsInitOnly || p.IsRequired);
         var isPrimitive = IsPrimitiveType(typeSymbol) || IsFrameworkType(typeSymbol);
         var canInstantiate = CanInstantiateType(typeSymbol);
+        var hasOnlyPrimitiveProperties = properties.All(p =>
+            p.Category != PropertyCategory.Collection &&
+            p.Category != PropertyCategory.Object);
 
         return new SerializableTypeInfo(
             TypeName: typeSymbol.Name,
@@ -179,7 +187,8 @@ public class TonlSourceGenerator : IIncrementalGenerator
             IsInterface: typeSymbol.TypeKind == TypeKind.Interface,
             IsAbstract: typeSymbol.IsAbstract,
             IsPrimitive: isPrimitive,
-            HasInitOnlyProperties: hasInitOnlyProps);
+            HasInitOnlyProperties: hasInitOnlyProps,
+            HasOnlyPrimitiveProperties: hasOnlyPrimitiveProperties);
     }
 
     private static PropertyCategory GetPropertyCategory(ITypeSymbol type)
@@ -243,7 +252,7 @@ public class TonlSourceGenerator : IIncrementalGenerator
                displayName.Contains("IReadOnlyDictionary<");
     }
 
-    private static (string? ElementTypeName, PropertyCategory ElementCategory, string? ElementSafePropertyName, bool IsDictionary, string? KeyTypeName, string? ElementGeneratedNamespace) GetCollectionElementInfo(ITypeSymbol type)
+    private static (string? ElementTypeName, PropertyCategory ElementCategory, string? ElementSafePropertyName, bool IsDictionary, string? KeyTypeName, string? ElementGeneratedNamespace, bool ElementHasOnlyPrimitives) GetCollectionElementInfo(ITypeSymbol type)
     {
         // Handle arrays
         if (type is IArrayTypeSymbol arrayType)
@@ -255,7 +264,8 @@ public class TonlSourceGenerator : IIncrementalGenerator
                 ? GetSafePropertyName(namedElement)
                 : elementType.Name;
             var elementNamespace = GetGeneratedNamespace(elementType);
-            return (elementTypeName, elementCategory, elementSafePropertyName, false, null, elementNamespace);
+            var elementHasOnlyPrimitives = TypeHasOnlyPrimitiveProperties(elementType);
+            return (elementTypeName, elementCategory, elementSafePropertyName, false, null, elementNamespace, elementHasOnlyPrimitives);
         }
 
         // Handle generic collections
@@ -275,7 +285,8 @@ public class TonlSourceGenerator : IIncrementalGenerator
                     : valueType.Name;
                 var keyTypeName = keyType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 var valueNamespace = GetGeneratedNamespace(valueType);
-                return (valueTypeName, valueCategory, valueSafePropertyName, true, keyTypeName, valueNamespace);
+                var valueHasOnlyPrimitives = TypeHasOnlyPrimitiveProperties(valueType);
+                return (valueTypeName, valueCategory, valueSafePropertyName, true, keyTypeName, valueNamespace, valueHasOnlyPrimitives);
             }
 
             // Other collections (List<T>, IEnumerable<T>, etc.) have 1 type argument
@@ -288,11 +299,12 @@ public class TonlSourceGenerator : IIncrementalGenerator
                     ? GetSafePropertyName(namedElement)
                     : elementType.Name;
                 var elementNamespace = GetGeneratedNamespace(elementType);
-                return (elementTypeName, elementCategory, elementSafePropertyName, false, null, elementNamespace);
+                var elementHasOnlyPrimitives = TypeHasOnlyPrimitiveProperties(elementType);
+                return (elementTypeName, elementCategory, elementSafePropertyName, false, null, elementNamespace, elementHasOnlyPrimitives);
             }
         }
 
-        return (null, PropertyCategory.Unknown, null, false, null, null);
+        return (null, PropertyCategory.Unknown, null, false, null, null, true);
     }
 
     private static string? GetObjectSafePropertyName(ITypeSymbol type)
@@ -356,6 +368,38 @@ public class TonlSourceGenerator : IIncrementalGenerator
             or "global::System.Guid"
             or "global::System.TimeSpan"
             or "global::System.Uri";
+    }
+
+    /// <summary>
+    /// Checks if a type has only primitive properties (no collection or object properties).
+    /// Used to determine whether to use tabular (WriteRow) or block (WriteProperties) format.
+    /// </summary>
+    private static bool TypeHasOnlyPrimitiveProperties(ITypeSymbol type)
+    {
+        if (type is not INamedTypeSymbol namedType)
+            return true;
+
+        // Skip system types - treat as having only primitives
+        var ns = namedType.ContainingNamespace?.ToDisplayString() ?? "";
+        if (ns.StartsWith("System") && !ns.StartsWith("System.Collections"))
+            return true;
+
+        var publicProperties = namedType
+            .GetMembers()
+            .OfType<IPropertySymbol>()
+            .Where(p => p.DeclaredAccessibility == Accessibility.Public &&
+                        p.GetMethod != null &&
+                        !p.IsIndexer &&
+                        !p.IsStatic);
+
+        foreach (var prop in publicProperties)
+        {
+            var category = GetPropertyCategory(prop.Type);
+            if (category == PropertyCategory.Collection || category == PropertyCategory.Object)
+                return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -443,7 +487,7 @@ public class TonlSourceGenerator : IIncrementalGenerator
         SerializableTypeInfo typeInfo)
     {
         var code = CodeGenerator.GenerateSerializer(typeInfo);
-        var hintName = $"{typeInfo.TypeName}.Tonl.g.cs";
+        var hintName = $"{typeInfo.SafePropertyName}.Tonl.g.cs";
 
         context.AddSource(hintName, SourceText.From(code, Encoding.UTF8));
     }
@@ -468,21 +512,41 @@ public class TonlSourceGenerator : IIncrementalGenerator
             }
         }
 
-        // Collect all [TonlSerializable(typeof(T))] attributes
+        // Collect all [TonlSerializable(typeof(T))] attributes and their symbols
         var types = new List<SerializableTypeInfo>();
+        var typeSymbols = new List<INamedTypeSymbol>();
+        var registeredTypeNames = new HashSet<string>();
+
         foreach (var attr in contextSymbol.GetAttributes())
         {
             if (attr.AttributeClass?.ToDisplayString() == TonlSerializableAttribute &&
-                attr.ConstructorArguments.Length > 0 &&
-                attr.ConstructorArguments[0].Value is INamedTypeSymbol targetType)
+                attr.ConstructorArguments.Length > 0)
             {
-                var typeInfo = ExtractTypeInfoFromSymbol(targetType, attr);
-                types.Add(typeInfo);
+                var argValue = attr.ConstructorArguments[0].Value;
+
+                if (argValue is INamedTypeSymbol targetType)
+                {
+                    var typeInfo = ExtractTypeInfoFromSymbol(targetType, attr);
+                    types.Add(typeInfo);
+                    typeSymbols.Add(targetType);
+                    registeredTypeNames.Add(typeInfo.FullyQualifiedName);
+                }
+                else if (argValue is IArrayTypeSymbol arrayType)
+                {
+                    // Handle array types like string[], int[]
+                    var typeInfo = ExtractTypeInfoFromArraySymbol(arrayType, attr);
+                    types.Add(typeInfo);
+                    registeredTypeNames.Add(typeInfo.FullyQualifiedName);
+                }
             }
         }
 
         if (types.Count == 0)
             return null;
+
+        // Recursively discover referenced types (element types, nested object types)
+        // that need serializers generated
+        DiscoverReferencedTypes(types, typeSymbols, registeredTypeNames);
 
         var namespaceName = contextSymbol.ContainingNamespace.IsGlobalNamespace
             ? null
@@ -494,6 +558,154 @@ public class TonlSourceGenerator : IIncrementalGenerator
             Namespace: namespaceName,
             GenerationMode: generationMode,
             Types: types.ToImmutableArray());
+    }
+
+    /// <summary>
+    /// Recursively discovers types referenced by properties (element types, nested objects)
+    /// and adds them to the types list if they need serializers generated.
+    /// </summary>
+    private static void DiscoverReferencedTypes(
+        List<SerializableTypeInfo> types,
+        List<INamedTypeSymbol> typeSymbols,
+        HashSet<string> registeredTypeNames)
+    {
+        // Keep discovering until no new types are found
+        var symbolsToProcess = new Queue<INamedTypeSymbol>(typeSymbols);
+
+        while (symbolsToProcess.Count > 0)
+        {
+            var typeSymbol = symbolsToProcess.Dequeue();
+
+            // Discover types from generic type arguments (e.g., List<T> → T)
+            DiscoverTypeArguments(typeSymbol, types, typeSymbols, registeredTypeNames, symbolsToProcess);
+
+            // Get all public properties of this type
+            var properties = typeSymbol
+                .GetMembers()
+                .OfType<IPropertySymbol>()
+                .Where(p => p.DeclaredAccessibility == Accessibility.Public &&
+                            p.GetMethod != null &&
+                            !p.IsIndexer &&
+                            !p.IsStatic);
+
+            foreach (var prop in properties)
+            {
+                var propType = prop.Type;
+                var category = GetPropertyCategory(propType);
+
+                // Check for collection element types
+                if (category == PropertyCategory.Collection)
+                {
+                    var elementSymbol = GetCollectionElementSymbol(propType);
+                    if (elementSymbol != null)
+                    {
+                        var elementCategory = GetPropertyCategory(elementSymbol);
+                        if (elementCategory == PropertyCategory.Object)
+                        {
+                            TryAddDiscoveredType(elementSymbol, types, typeSymbols, registeredTypeNames, symbolsToProcess);
+                        }
+                    }
+                }
+                // Check for nested object properties
+                else if (category == PropertyCategory.Object && propType is INamedTypeSymbol objectSymbol)
+                {
+                    TryAddDiscoveredType(objectSymbol, types, typeSymbols, registeredTypeNames, symbolsToProcess);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the element type symbol from a collection type.
+    /// </summary>
+    private static INamedTypeSymbol? GetCollectionElementSymbol(ITypeSymbol type)
+    {
+        // Handle arrays
+        if (type is IArrayTypeSymbol arrayType)
+        {
+            return arrayType.ElementType as INamedTypeSymbol;
+        }
+
+        // Handle generic collections
+        if (type is INamedTypeSymbol namedType && namedType.IsGenericType)
+        {
+            var typeArgs = namedType.TypeArguments;
+
+            // Dictionary types have 2 type arguments - get the value type
+            if (IsDictionaryType(type) && typeArgs.Length == 2)
+            {
+                return typeArgs[1] as INamedTypeSymbol;
+            }
+
+            // Other collections (List<T>, IEnumerable<T>, etc.) have 1 type argument
+            if (typeArgs.Length >= 1)
+            {
+                return typeArgs[0] as INamedTypeSymbol;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Discovers object types from a type's generic type arguments.
+    /// For example, List&lt;User&gt; would discover User.
+    /// Uses TryAddDiscoveredType which handles de-duplication via registeredTypeNames.
+    /// </summary>
+    private static void DiscoverTypeArguments(
+        INamedTypeSymbol typeSymbol,
+        List<SerializableTypeInfo> types,
+        List<INamedTypeSymbol> typeSymbols,
+        HashSet<string> registeredTypeNames,
+        Queue<INamedTypeSymbol> symbolsToProcess)
+    {
+        if (!typeSymbol.IsGenericType)
+            return;
+
+        foreach (var typeArg in typeSymbol.TypeArguments)
+        {
+            if (typeArg is INamedTypeSymbol namedTypeArg)
+            {
+                var category = GetPropertyCategory(namedTypeArg);
+                if (category == PropertyCategory.Object)
+                {
+                    TryAddDiscoveredType(namedTypeArg, types, typeSymbols, registeredTypeNames, symbolsToProcess);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Tries to add a discovered type to the types list if it's not already registered.
+    /// </summary>
+    private static void TryAddDiscoveredType(
+        INamedTypeSymbol typeSymbol,
+        List<SerializableTypeInfo> types,
+        List<INamedTypeSymbol> typeSymbols,
+        HashSet<string> registeredTypeNames,
+        Queue<INamedTypeSymbol> symbolsToProcess)
+    {
+        var fullName = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        // Skip if already registered, or if it's a primitive/system type
+        if (registeredTypeNames.Contains(fullName))
+            return;
+
+        // Skip interfaces and abstract classes
+        if (typeSymbol.TypeKind == TypeKind.Interface || typeSymbol.IsAbstract)
+            return;
+
+        // Skip system types and primitives
+        var ns = typeSymbol.ContainingNamespace?.ToDisplayString() ?? "";
+        if (ns.StartsWith("System") && !ns.StartsWith("System.Collections"))
+            return;
+
+        // Extract type info and add to the list
+        var typeInfo = ExtractTypeInfoFromSymbol(typeSymbol, null);
+        types.Add(typeInfo);
+        typeSymbols.Add(typeSymbol);
+        registeredTypeNames.Add(fullName);
+        symbolsToProcess.Enqueue(typeSymbol);
     }
 
     private static SerializableTypeInfo ExtractTypeInfoFromSymbol(INamedTypeSymbol typeSymbol, AttributeData? attr)
@@ -511,6 +723,15 @@ public class TonlSourceGenerator : IIncrementalGenerator
                     generateDeserializer = genDeser;
             }
         }
+
+        // Check if this is a collection type being registered as a root type
+        var isRootCollection = IsCollectionType(typeSymbol);
+        var isRootDictionary = isRootCollection && IsDictionaryType(typeSymbol);
+
+        // Get collection element info for root-level collections
+        var (collectionElementTypeName, collectionElementCategory, collectionElementSafePropertyName,
+             _, collectionKeyTypeName, collectionElementGeneratedNamespace, collectionElementHasOnlyPrimitives) =
+            isRootCollection ? GetCollectionElementInfo(typeSymbol) : (null, PropertyCategory.Unknown, null, false, null, null, true);
 
         var publicProperties = typeSymbol
             .GetMembers()
@@ -548,39 +769,54 @@ public class TonlSourceGenerator : IIncrementalGenerator
             orderedProperties = publicProperties.OrderBy(p => p.Name, StringComparer.Ordinal);
         }
 
-        var properties = orderedProperties
-            .Select(p =>
-            {
-                var category = GetPropertyCategory(p.Type);
-                var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace) =
-                    category == PropertyCategory.Collection
-                        ? GetCollectionElementInfo(p.Type)
-                        : (null, PropertyCategory.Unknown, null, false, null, null);
-                var objectSafePropertyName = category == PropertyCategory.Object
-                    ? GetObjectSafePropertyName(p.Type)
-                    : null;
-                var objectGeneratedNamespace = category == PropertyCategory.Object
-                    ? GetObjectGeneratedNamespace(p.Type)
-                    : null;
+        // For collection types registered as root, set Properties to empty
+        // This prevents CLR properties (Capacity, Count, Comparer, etc.) from being serialized
+        ImmutableArray<PropertyInfo> properties;
+        if (isRootCollection)
+        {
+            properties = ImmutableArray<PropertyInfo>.Empty;
+        }
+        else
+        {
+            properties = orderedProperties
+                .Select(p =>
+                {
+                    var category = GetPropertyCategory(p.Type);
+                    var (elementTypeName, elementCategory, elementSafePropertyName, isDictionary, keyTypeName, elementGeneratedNamespace, elementHasOnlyPrimitives) =
+                        category == PropertyCategory.Collection
+                            ? GetCollectionElementInfo(p.Type)
+                            : (null, PropertyCategory.Unknown, null, false, null, null, true);
+                    var objectSafePropertyName = category == PropertyCategory.Object
+                        ? GetObjectSafePropertyName(p.Type)
+                        : null;
+                    var objectGeneratedNamespace = category == PropertyCategory.Object
+                        ? GetObjectGeneratedNamespace(p.Type)
+                        : null;
+                    var objectHasOnlyPrimitives = category == PropertyCategory.Object
+                        ? TypeHasOnlyPrimitiveProperties(p.Type)
+                        : true;
 
-                return new PropertyInfo(
-                    p.Name,
-                    p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    p.Type.NullableAnnotation == NullableAnnotation.Annotated,
-                    p.SetMethod != null && p.SetMethod.DeclaredAccessibility == Accessibility.Public,
-                    IsInitOnlyProperty(p),
-                    IsRequiredProperty(p),
-                    category,
-                    elementTypeName,
-                    elementCategory,
-                    elementSafePropertyName,
-                    isDictionary,
-                    keyTypeName,
-                    objectSafePropertyName,
-                    elementGeneratedNamespace,
-                    objectGeneratedNamespace);
-            })
-            .ToImmutableArray();
+                    return new PropertyInfo(
+                        p.Name,
+                        p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        p.Type.NullableAnnotation == NullableAnnotation.Annotated,
+                        p.SetMethod != null && p.SetMethod.DeclaredAccessibility == Accessibility.Public,
+                        IsInitOnlyProperty(p),
+                        IsRequiredProperty(p),
+                        category,
+                        elementTypeName,
+                        elementCategory,
+                        elementSafePropertyName,
+                        isDictionary,
+                        keyTypeName,
+                        objectSafePropertyName,
+                        elementGeneratedNamespace,
+                        objectGeneratedNamespace,
+                        elementHasOnlyPrimitives,
+                        objectHasOnlyPrimitives);
+                })
+                .ToImmutableArray();
+        }
 
         var namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace
             ? null
@@ -589,6 +825,9 @@ public class TonlSourceGenerator : IIncrementalGenerator
         var hasInitOnlyProps = properties.Any(p => p.IsInitOnly || p.IsRequired);
         var isPrimitive = IsPrimitiveType(typeSymbol) || IsFrameworkType(typeSymbol);
         var canInstantiate = CanInstantiateType(typeSymbol);
+        var hasOnlyPrimitiveProperties = properties.All(p =>
+            p.Category != PropertyCategory.Collection &&
+            p.Category != PropertyCategory.Object);
 
         return new SerializableTypeInfo(
             TypeName: typeSymbol.Name,
@@ -604,7 +843,83 @@ public class TonlSourceGenerator : IIncrementalGenerator
             IsInterface: typeSymbol.TypeKind == TypeKind.Interface,
             IsAbstract: typeSymbol.IsAbstract,
             IsPrimitive: isPrimitive,
-            HasInitOnlyProperties: hasInitOnlyProps);
+            HasInitOnlyProperties: hasInitOnlyProps,
+            // Collection metadata
+            IsCollection: isRootCollection,
+            IsDictionaryCollection: isRootDictionary,
+            CollectionElementTypeName: collectionElementTypeName,
+            CollectionElementCategory: collectionElementCategory,
+            CollectionElementSafePropertyName: collectionElementSafePropertyName,
+            CollectionElementGeneratedNamespace: collectionElementGeneratedNamespace,
+            CollectionKeyTypeName: collectionKeyTypeName,
+            CollectionElementHasOnlyPrimitives: collectionElementHasOnlyPrimitives,
+            HasOnlyPrimitiveProperties: hasOnlyPrimitiveProperties);
+    }
+
+    /// <summary>
+    /// Extracts type info from an array type symbol (e.g., string[], int[]).
+    /// </summary>
+    private static SerializableTypeInfo ExtractTypeInfoFromArraySymbol(IArrayTypeSymbol arrayType, AttributeData? attr)
+    {
+        var generateSerializer = true;
+        var generateDeserializer = true;
+
+        if (attr != null)
+        {
+            foreach (var namedArg in attr.NamedArguments)
+            {
+                if (namedArg.Key == "GenerateSerializer" && namedArg.Value.Value is bool genSer)
+                    generateSerializer = genSer;
+                else if (namedArg.Key == "GenerateDeserializer" && namedArg.Value.Value is bool genDeser)
+                    generateDeserializer = genDeser;
+            }
+        }
+
+        // Get the element type information
+        var elementType = arrayType.ElementType;
+        var elementCategory = GetPropertyCategory(elementType);
+        var elementTypeName = elementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        // Get safe property names for element type if it's an object
+        string? elementSafePropertyName = null;
+        string? elementGeneratedNamespace = null;
+        var elementHasOnlyPrimitives = TypeHasOnlyPrimitiveProperties(elementType);
+        if (elementCategory == PropertyCategory.Object && elementType is INamedTypeSymbol elementNamedType)
+        {
+            elementSafePropertyName = GetSafePropertyName(elementNamedType);
+            elementGeneratedNamespace = elementNamedType.ContainingNamespace.IsGlobalNamespace
+                ? null
+                : $"{elementNamedType.ContainingNamespace.ToDisplayString()}.Generated";
+        }
+
+        var safePropertyName = GetSafeArrayName(arrayType);
+        var fullyQualifiedName = arrayType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        return new SerializableTypeInfo(
+            TypeName: safePropertyName,
+            SafePropertyName: safePropertyName,
+            FullyQualifiedName: fullyQualifiedName,
+            Namespace: null, // Arrays don't have a containing namespace in the same way
+            Properties: ImmutableArray<PropertyInfo>.Empty, // Arrays don't have CLR properties we serialize
+            IsRecord: false,
+            IsValueType: false,
+            GenerateSerializer: generateSerializer,
+            GenerateDeserializer: generateDeserializer,
+            CanInstantiate: false, // Can't instantiate arrays with parameterless constructor
+            IsInterface: false,
+            IsAbstract: false,
+            IsPrimitive: false,
+            HasInitOnlyProperties: false,
+            // Collection metadata
+            IsCollection: true,
+            IsDictionaryCollection: false,
+            CollectionElementTypeName: elementTypeName,
+            CollectionElementCategory: elementCategory,
+            CollectionElementSafePropertyName: elementSafePropertyName,
+            CollectionElementGeneratedNamespace: elementGeneratedNamespace,
+            CollectionKeyTypeName: null,
+            CollectionElementHasOnlyPrimitives: elementHasOnlyPrimitives,
+            HasOnlyPrimitiveProperties: true);  // Arrays themselves don't have properties
     }
 
     private static void GenerateContextCode(
@@ -613,14 +928,14 @@ public class TonlSourceGenerator : IIncrementalGenerator
     {
         // Generate individual serializer files for each registered type
         // This is required because the context code references {Type}TonlSerializer classes
-        // Only generate individual serializers for types that can be fully serialized/deserialized
-        // Skip primitives, abstracts, interfaces, and non-record types without parameterless constructors
+        // Generate for all concrete types (not primitives, interfaces, or abstract classes)
+        // Even types without parameterless constructors need serializers for PropertyNames, WriteRow, etc.
         foreach (var typeInfo in contextInfo.Types)
         {
-            if (!typeInfo.IsPrimitive && (typeInfo.CanInstantiate || typeInfo.IsRecord))
+            if (!typeInfo.IsPrimitive && !typeInfo.IsInterface && !typeInfo.IsAbstract)
             {
                 var serializerCode = CodeGenerator.GenerateSerializer(typeInfo);
-                var serializerHintName = $"{typeInfo.TypeName}.Tonl.g.cs";
+                var serializerHintName = $"{typeInfo.SafePropertyName}.Tonl.g.cs";
                 context.AddSource(serializerHintName, SourceText.From(serializerCode, Encoding.UTF8));
             }
         }
@@ -651,7 +966,17 @@ internal sealed record SerializableTypeInfo(
     bool IsInterface,
     bool IsAbstract,
     bool IsPrimitive,
-    bool HasInitOnlyProperties);
+    bool HasInitOnlyProperties,
+    // Collection type metadata (for root-level collection serialization)
+    bool IsCollection = false,           // Is this a collection type (List, Array, IEnumerable, Dictionary)?
+    bool IsDictionaryCollection = false, // Is this a dictionary type?
+    string? CollectionElementTypeName = null,         // Element type for collections (value type for dictionaries)
+    PropertyCategory CollectionElementCategory = PropertyCategory.Unknown, // Category of element type
+    string? CollectionElementSafePropertyName = null, // Safe property name for element type
+    string? CollectionElementGeneratedNamespace = null, // Generated namespace for element serializer
+    string? CollectionKeyTypeName = null,  // Key type for dictionaries
+    bool CollectionElementHasOnlyPrimitives = true, // True if collection element type has only primitive properties
+    bool HasOnlyPrimitiveProperties = true);  // True if all properties are primitives (no collections/objects)
 
 /// <summary>
 /// Information about a property to serialize.
@@ -672,7 +997,9 @@ internal sealed record PropertyInfo(
     string? KeyTypeName = null,               // Key type for dictionaries
     string? ObjectSafePropertyName = null,    // Safe property name for nested object context lookup
     string? ElementGeneratedNamespace = null, // Generated namespace for element type serializer
-    string? ObjectGeneratedNamespace = null); // Generated namespace for nested object serializer
+    string? ObjectGeneratedNamespace = null,  // Generated namespace for nested object serializer
+    bool ElementHasOnlyPrimitives = true,     // True if collection element type has only primitive properties
+    bool ObjectHasOnlyPrimitives = true);     // True if nested object type has only primitive properties
 
 /// <summary>
 /// Categories of property types for serialization dispatch.

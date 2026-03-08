@@ -2,7 +2,32 @@
 
 All notable changes to TONL.NET will be documented in this file.
 
-## [1.0.0-alpha] - 2025-01-15
+## [1.1.0] - 2026-03-08
+
+### Added
+
+- **IEnumerable\<T\> support** — root-level `IEnumerable<T>` collections now serialize correctly
+- **Type argument discovery** — source generator recursively discovers referenced types for complete code generation
+- **Recursive type discovery** — `SerializeToString` now performs deep type traversal to find all dependent serializable types
+
+### Fixed
+
+- **Spec compliance: block format for nested objects** — nested objects now correctly emit block format (`key{cols}:\n  prop: val`) instead of incorrect inline format (`key{cols}: val1, val2`), per TONL specification §5
+- **Spec compliance: block-format array headers** — arrays of complex objects now include column names in the header (`key[N]{col1,col2}:`) instead of omitting them (`key[N]:`)
+- **Spec compliance: deserializer block detection** — `DeserializeDocument` now correctly parses block-format arrays with column headers; previously treated all `key[N]{cols}:` headers as tabular, breaking round-trips for complex nested structures
+- **Root-level collection serialization** — fixed serialization of `List<T>` and `IEnumerable<T>` as the root object
+- **Nested collection and object property serialization** — fixed direct serializers writing `.ToString()` for collection/object properties in tabular rows
+- **Source generator: duplicate hintName** — fixed hint name collisions for generic types in the source generator
+- **Source generator: duplicate class names** — fixed class name collisions for generic types
+- **Source generator: context-registered types** — fixed issues with types registered via `[TonlSerializable]` on a context class
+- **Source generator: non-instantiable types** — skip serializer generation for interfaces and abstract classes
+- **`SerializeToString` missing `Flush()`** — fixed missing buffer flush causing truncated output
+
+### Tests
+
+- 360 tests (up from 273) covering spec compliance, complex nested structures, tabular-vs-block decision logic, and round-trip fidelity
+
+## [1.0.0] - 2026-01-16
 
 ### Added
 
