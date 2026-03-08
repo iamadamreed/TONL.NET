@@ -1471,3 +1471,125 @@ public class WriteRowCollectionTests
         Assert.DoesNotContain("System.Collections.Generic.List", tonl);
     }
 }
+
+// =============================================================================
+// Test types for tabular-vs-block format decision (Issue #13 - T3)
+// =============================================================================
+
+public class TabularDecisionItem
+{
+    public string Name { get; set; } = "";
+    public decimal Price { get; set; }
+}
+
+public class BlockDecisionItem
+{
+    public string Name { get; set; } = "";
+    public List<string> Tags { get; set; } = [];
+}
+
+public class TabularDecisionWrapper
+{
+    public List<TabularDecisionItem> Items { get; set; } = [];
+}
+
+public class BlockDecisionWrapper
+{
+    public List<BlockDecisionItem> Items { get; set; } = [];
+}
+
+[TonlSourceGenerationOptions]
+[TonlSerializable(typeof(TabularDecisionItem))]
+[TonlSerializable(typeof(BlockDecisionItem))]
+[TonlSerializable(typeof(TabularDecisionWrapper))]
+[TonlSerializable(typeof(BlockDecisionWrapper))]
+public partial class TabularBlockDecisionContext : TonlSerializerContext { }
+
+/// <summary>
+/// Tests verifying the tabular-vs-block format decision for arrays of objects.
+/// Arrays where all element properties are primitive use tabular (comma-delimited) format.
+/// Arrays where elements have collection/object properties use block (key-value) format.
+/// </summary>
+public class TabularVsBlockDecisionTests
+{
+    [Fact]
+    public void ArrayOfAllPrimitiveObjects_UsesTabularFormat()
+    {
+        var wrapper = new TabularDecisionWrapper
+        {
+            Items =
+            [
+                new TabularDecisionItem { Name = "Widget", Price = 9.99m },
+                new TabularDecisionItem { Name = "Gadget", Price = 14.99m }
+            ]
+        };
+
+        var tonl = TonlSerializer.SerializeToString(wrapper, TabularBlockDecisionContext.Default.TabularDecisionWrapper);
+
+        // Tabular: header with column names and count
+        Assert.Contains("Items[2]{", tonl);
+        Assert.Contains("Widget", tonl);
+
+        // Should NOT have "Name:" key-value lines (tabular uses comma-separated rows)
+        Assert.DoesNotContain("Name: Widget", tonl);
+    }
+
+    [Fact]
+    public void ArrayOfObjectsWithCollectionProperty_UsesBlockFormat()
+    {
+        var wrapper = new BlockDecisionWrapper
+        {
+            Items =
+            [
+                new BlockDecisionItem { Name = "Alpha", Tags = ["a", "b"] },
+                new BlockDecisionItem { Name = "Beta", Tags = ["c"] }
+            ]
+        };
+
+        var tonl = TonlSerializer.SerializeToString(wrapper, TabularBlockDecisionContext.Default.BlockDecisionWrapper);
+
+        // Block: header includes columns
+        Assert.Contains("Items[2]{", tonl);
+        // Block format uses key-value lines
+        Assert.Contains("Name: Alpha", tonl);
+
+        // Should NOT be a tabular row with comma-separated values like "Alpha, [..."
+        Assert.DoesNotContain("Alpha, [", tonl);
+    }
+}
+
+// =============================================================================
+// Constraint list block format test (Issue #13 - T4, Issue #27)
+// =============================================================================
+
+/// <summary>
+/// Tests verifying that a list of objects with collection properties (like ConstraintInfoLike)
+/// uses block format with column headers.
+/// </summary>
+public class ConstraintListBlockFormatTests
+{
+    [Fact]
+    public void ConstraintList_BlockFormat_IncludesColumnHeader()
+    {
+        var wrapper = new ConstraintListWrapper
+        {
+            TableSchema = "dbo",
+            Constraints =
+            [
+                new ConstraintInfoLike
+                {
+                    ConstraintName = "PK_Users",
+                    TableName = "Users",
+                    Columns = ["UserId", "TenantId"]
+                }
+            ]
+        };
+
+        var tonl = TonlSerializer.SerializeToString(wrapper, WriteRowTestContext.Default.ConstraintListWrapper);
+
+        Assert.Contains("Constraints[1]{", tonl);
+        Assert.Contains("ConstraintName: PK_Users", tonl);
+        Assert.Contains("TableName: Users", tonl);
+        Assert.Contains("UserId", tonl);
+    }
+}
