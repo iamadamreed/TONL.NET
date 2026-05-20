@@ -223,6 +223,8 @@ public class TonlSourceGenerator : IIncrementalGenerator
             _ when displayName == "global::System.DateTimeOffset" => PropertyCategory.DateTime,
             _ when displayName == "global::System.Guid" => PropertyCategory.Guid,
             _ when displayName == "global::System.TimeSpan" => PropertyCategory.TimeSpan,
+            // TonlElement is a leaf — emit raw bytes directly, never recurse into its Bytes payload.
+            _ when displayName == "global::TONL.NET.TonlElement" => PropertyCategory.TonlElement,
             _ when type.TypeKind == TypeKind.Enum => PropertyCategory.Enum,
             _ when IsCollectionType(type) => PropertyCategory.Collection,
             _ when type.TypeKind == TypeKind.Class || type.TypeKind == TypeKind.Struct => PropertyCategory.Object,
@@ -1017,7 +1019,12 @@ internal enum PropertyCategory
     TimeSpan,
     Enum,
     Collection,
-    Object
+    Object,
+    /// <summary>
+    /// Represents a <see cref="TONL.NET.TonlElement"/> property — pre-rendered TONL bytes
+    /// that the source generator emits directly via WriteKeyRawValue without recursion.
+    /// </summary>
+    TonlElement
 }
 
 /// <summary>
