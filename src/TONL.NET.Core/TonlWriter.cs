@@ -308,6 +308,16 @@ public ref struct TonlWriter
     }
 
     /// <summary>
+    /// Writes an unsigned long key-value pair: key: 18446744073709551615
+    /// </summary>
+    public void WriteKeyUInt64(ReadOnlySpan<char> key, ulong value)
+    {
+        WriteKey(key);
+        WriteRaw(ColonSpace);
+        WriteUInt64(value);
+    }
+
+    /// <summary>
     /// Writes a double key-value pair: key: 3.14
     /// </summary>
     public void WriteKeyDouble(ReadOnlySpan<char> key, double value)
@@ -378,6 +388,23 @@ public ref struct TonlWriter
         else
         {
             WriteUtf8String(value.ToString(CultureInfo.InvariantCulture));
+        }
+    }
+
+    /// <summary>
+    /// Writes an unsigned long value.
+    /// ulong.MaxValue = 18446744073709551615 (20 digits).
+    /// </summary>
+    public void WriteUInt64(ulong value)
+    {
+        EnsureCapacity(20);
+        if (Utf8Formatter.TryFormat(value, _buffer.Slice(_buffered), out int written))
+        {
+            _buffered += written;
+        }
+        else
+        {
+            throw new InvalidOperationException("Failed to format ulong.");
         }
     }
 
@@ -687,6 +714,24 @@ public ref struct TonlWriter
         _buffered += bytesWritten;
     }
 
+    /// <summary>
+    /// Writes a pre-rendered TONL value fragment into the current writer position.
+    /// The caller is responsible for the fragment being syntactically valid TONL
+    /// at the current writer state. No validation, no quoting, no escaping is applied.
+    /// </summary>
+    public void WriteRawValue(scoped ReadOnlySpan<byte> value) => WriteRaw(value);
+
+    /// <summary>
+    /// Writes a key followed by a pre-rendered TONL value fragment.
+    /// The key is quoted per spec when required; the value bytes are emitted as-is.
+    /// </summary>
+    public void WriteKeyRawValue(ReadOnlySpan<char> key, scoped ReadOnlySpan<byte> rawValue)
+    {
+        WriteKey(key);
+        WriteRaw(ColonSpace);
+        WriteRaw(rawValue);
+    }
+
     private void WriteRaw(scoped ReadOnlySpan<byte> data)
     {
         EnsureCapacity(data.Length);
@@ -734,6 +779,11 @@ file static class Utf8Formatter
     }
 
     public static bool TryFormat(long value, Span<byte> destination, out int bytesWritten)
+    {
+        return System.Buffers.Text.Utf8Formatter.TryFormat(value, destination, out bytesWritten);
+    }
+
+    public static bool TryFormat(ulong value, Span<byte> destination, out int bytesWritten)
     {
         return System.Buffers.Text.Utf8Formatter.TryFormat(value, destination, out bytesWritten);
     }

@@ -92,6 +92,12 @@ public enum Status
     Pending = 2
 }
 
+// v1.2.0: TonlElement holder — validates source-gen special-case under NativeAOT
+public record AotTonlElementHolder(TonlElement Rows, int RowCount);
+
+// v1.2.0: ulong record — validates WriteKeyUInt64 codegen under NativeAOT
+public record AotULongRecord(ulong MaxValue, string Label);
+
 // ============================================================
 // Context class with source generation
 // ============================================================
@@ -113,6 +119,9 @@ public enum Status
 [TonlSerializable(typeof(OrderRecord))]
 [TonlSerializable(typeof(EnumerableRecord))]
 [TonlSerializable(typeof(ConcurrentRecord))]
+// v1.2.0 types
+[TonlSerializable(typeof(AotTonlElementHolder))]
+[TonlSerializable(typeof(AotULongRecord))]
 public partial class AotTestContext : TonlSerializerContext { }
 
 // ============================================================
@@ -156,6 +165,10 @@ public class Program
             TestContextGetTypeInfo();
             TestContextSingleton();
             TestSerializeToBytes();
+
+            // v1.2.0 tests
+            TestTonlElementHolder();
+            TestULongRecord();
 
             // Print summary
             Console.WriteLine($"\n{'=',-50}");
@@ -441,6 +454,43 @@ public class Program
 
         // Should contain key
         Assert("Concurrent - contains ThreadSafeScores key", tonl.Contains("ThreadSafeScores"));
+    }
+
+    private static void TestTonlElementHolder()
+    {
+        // Build a TonlElement from known bytes (disconnected from any pool via ToArray)
+        var rawBytes = "x: 1\ny: 2\n"u8.ToArray();
+        var element = new TonlElement(rawBytes);
+        var record = new AotTonlElementHolder(element, 2);
+
+        var tonl = TonlSerializer.SerializeToString(record, AotTestContext.Default.AotTonlElementHolder);
+
+        Console.WriteLine("\n--- AotTonlElementHolder TONL Output ---");
+        Console.WriteLine(tonl);
+        Console.WriteLine("--- End Output ---\n");
+
+        // Raw bytes inlined — no recursive Bytes serialization
+        Assert("TonlElement - raw content x: 1 present", tonl.Contains("x: 1"));
+        Assert("TonlElement - raw content y: 2 present", tonl.Contains("y: 2"));
+        Assert("TonlElement - no Bytes: key (no recursion)", !tonl.Contains("Bytes:"));
+        Assert("TonlElement - no IsEmpty key (no recursion)", !tonl.Contains("IsEmpty:"));
+        Assert("TonlElement - RowCount present", tonl.Contains("RowCount: 2"));
+    }
+
+    private static void TestULongRecord()
+    {
+        var record = new AotULongRecord(ulong.MaxValue, "max");
+
+        var tonl = TonlSerializer.SerializeToString(record, AotTestContext.Default.AotULongRecord);
+
+        Console.WriteLine("\n--- AotULongRecord TONL Output ---");
+        Console.WriteLine(tonl);
+        Console.WriteLine("--- End Output ---\n");
+
+        // ulong.MaxValue must be a bare integer, not a quoted string
+        Assert("ULongRecord - bare integer 18446744073709551615", tonl.Contains("18446744073709551615"));
+        Assert("ULongRecord - not quoted string", !tonl.Contains("\"18446744073709551615\""));
+        Assert("ULongRecord - Label present", tonl.Contains("max"));
     }
 
     private static void Assert(string testName, bool condition)
