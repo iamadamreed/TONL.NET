@@ -1593,3 +1593,112 @@ public class ConstraintListBlockFormatTests
         Assert.Contains("UserId", tonl);
     }
 }
+
+// =============================================================================
+// TonlElement source-generator special-case tests (v1.2.0)
+// =============================================================================
+
+/// <summary>
+/// Record with a TonlElement property used to embed pre-rendered TONL bytes.
+/// Registered via V120Context (not directly attributed to avoid hint-name collisions).
+/// </summary>
+public record TonlElementRecord(TonlElement Rows, int RowCount);
+
+/// <summary>
+/// Record with a ulong property to verify WriteKeyUInt64 codegen.
+/// Registered via V120Context.
+/// </summary>
+public record ULongRecord(ulong MaxValue, string Label);
+
+/// <summary>
+/// Context for registering v1.2.0 new-API types.
+/// </summary>
+[TonlSourceGenerationOptions]
+[TonlSerializable(typeof(TonlElementRecord))]
+[TonlSerializable(typeof(ULongRecord))]
+public partial class V120Context : TonlSerializerContext { }
+
+/// <summary>
+/// Tests verifying v1.2.0 source-generator additions: TonlElement and ulong.
+/// </summary>
+public class V120SourceGeneratorTests
+{
+    [Fact]
+    public void TonlElement_PropertySerializedAsRawBytes_NotRecursiveBytes()
+    {
+        // Arrange: raw TONL bytes that look like a block result set
+        var rawTonl = "x: 1\ny: 2\n"u8.ToArray();
+        var element = new TonlElement(rawTonl);
+        var record = new TonlElementRecord(element, 2);
+
+        // Act: use context-based serializer (source-gen path)
+        var tonl = TonlSerializer.SerializeToString(record, V120Context.Default.TonlElementRecord);
+
+        // Assert: raw bytes appear inline — no recursive "Bytes: { ... }" shape
+        Assert.Contains("x: 1", tonl);
+        Assert.Contains("y: 2", tonl);
+        Assert.DoesNotContain("Bytes:", tonl);
+        Assert.DoesNotContain("IsEmpty:", tonl);
+        Assert.Contains("RowCount: 2", tonl);
+    }
+
+    [Fact]
+    public void TonlElement_EmptyElement_DoesNotCrash()
+    {
+        var record = new TonlElementRecord(TonlElement.Empty, 0);
+        var tonl = TonlSerializer.SerializeToString(record, V120Context.Default.TonlElementRecord);
+
+        // Empty element emits nothing for the value bytes — key still present
+        Assert.Contains("Rows:", tonl);
+        Assert.Contains("RowCount: 0", tonl);
+    }
+
+    [Fact]
+    public void TonlElement_DirectSerializerSerializeToString_InlinesBytes()
+    {
+        var rawTonl = "count: 99\n"u8.ToArray();
+        var element = new TonlElement(rawTonl);
+        var record = new TonlElementRecord(element, 1);
+
+        // Also works via the directly-generated serializer class
+        var tonl = TonlElementRecordTonlSerializer.SerializeToString(record);
+
+        Assert.Contains("count: 99", tonl);
+        Assert.DoesNotContain("Bytes:", tonl);
+    }
+
+    [Fact]
+    public void ULongRecord_ValuesAboveLongMax_EmittedAsBareIntegers_NotQuotedStrings()
+    {
+        var record = new ULongRecord(ulong.MaxValue, "max");
+
+        var tonl = TonlSerializer.SerializeToString(record, V120Context.Default.ULongRecord);
+
+        // ulong.MaxValue = 18446744073709551615 — must be bare integer, not "18446744073709551615"
+        Assert.Contains("18446744073709551615", tonl);
+        Assert.DoesNotContain("\"18446744073709551615\"", tonl);
+    }
+
+    [Fact]
+    public void ULongRecord_Zero_EmittedAsBareInteger()
+    {
+        var record = new ULongRecord(0UL, "zero");
+
+        var tonl = ULongRecordTonlSerializer.SerializeToString(record);
+
+        Assert.Contains("MaxValue: 0", tonl);
+        Assert.DoesNotContain("\"0\"", tonl);
+    }
+
+    [Fact]
+    public void ULongRecord_LongMaxPlusOne_EmittedAsBareInteger()
+    {
+        var value = (ulong)long.MaxValue + 1UL;
+        var record = new ULongRecord(value, "boundary");
+
+        var tonl = ULongRecordTonlSerializer.SerializeToString(record);
+
+        Assert.Contains("9223372036854775808", tonl);
+        Assert.DoesNotContain("\"9223372036854775808\"", tonl);
+    }
+}

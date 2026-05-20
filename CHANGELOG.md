@@ -2,6 +2,23 @@
 
 All notable changes to TONL.NET will be documented in this file.
 
+## [1.2.0] - 2026-05-20
+
+### Added
+
+- **`TonlElement`** — readonly struct wrapping pre-rendered TONL bytes. Use to embed dynamic-schema payloads inside source-gen-serialized envelopes (e.g., database result sets where the row schema is determined at runtime).
+- **`TonlWriter.WriteRawValue(ReadOnlySpan<byte>)`** + **`WriteKeyRawValue(ReadOnlySpan<char>, ReadOnlySpan<byte>)`** — public primitives for emitting pre-rendered TONL fragments. Caller is responsible for fragment validity.
+- **`TonlWriter.WriteUInt64(ulong)`** + **`WriteKeyUInt64(ReadOnlySpan<char>, ulong)`** — close the `ulong` API gap. Source generator now emits these for `ulong` properties instead of the previous `ToString()` fallback (which produced quoted strings for values > `long.MaxValue`).
+
+### Changed
+
+- Source generator now treats `TonlElement` as a leaf type during recursive type discovery — no recursion into its `Bytes` payload.
+- `ulong` properties now serialize as bare integers (was: quoted strings via `.ToString()`). Existing serialized output of `ulong` values changes from `"123"` to `123` — non-breaking for spec conformance, but consumers parsing old output as strings may need updating.
+
+### Tests
+
+- 377 tests (up from 360) covering `WriteRawValue`, `WriteKeyRawValue`, `WriteUInt64`, `WriteKeyUInt64`, `TonlElement` source-gen special-case, and `ulong` bare-integer codegen. AOT test count: 58 (up from 51).
+
 ## [1.1.0] - 2026-03-08
 
 ### Added

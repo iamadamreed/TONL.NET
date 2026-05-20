@@ -4,7 +4,7 @@ A high-performance .NET implementation of [TONL (Token-Optimized Notation Langua
 
 ## Features
 
-- **Full TONL Spec Compliance** - 273 tests passing against the official specification
+- **Full TONL Spec Compliance** - 360 tests passing against the official specification
 - **High Performance** - Competitive deserialization speed with System.Text.Json
 - **Excellent Compression** - Up to 3.2x smaller output than JSON on typical datasets
 - **Zero-Allocation Design** - Ref struct reader/writer for minimal GC pressure
@@ -197,7 +197,7 @@ TONL excels at compression while maintaining competitive speed. The format is id
 
 - **TONL.NET.Core** - Core serialization library
 - **TONL.NET.SourceGenerator** - Roslyn-based source generator for compile-time serialization
-- **TONL.NET.Tests** - Test suite with 273 spec compliance tests
+- **TONL.NET.Tests** - Test suite with 360 spec compliance tests
 - **TONL.NET.Benchmarks** - BenchmarkDotNet performance tests
 
 ## Building

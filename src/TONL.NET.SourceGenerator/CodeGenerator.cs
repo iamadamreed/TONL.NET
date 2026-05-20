@@ -241,6 +241,7 @@ internal static class CodeGenerator
 
         return prop.Category switch
         {
+            PropertyCategory.TonlElement => "global::TONL.NET.TonlElement.Empty", // Cannot meaningfully deserialize pre-rendered bytes from dictionary
             PropertyCategory.Boolean => GetTypedConversion(dictAccess, "bool", prop.IsNullable, index),
             PropertyCategory.Integer => GetNumericConversion(dictAccess, baseType, prop.IsNullable, index),
             PropertyCategory.Float => GetNumericConversion(dictAccess, baseType, prop.IsNullable, index),
@@ -366,6 +367,15 @@ internal static class CodeGenerator
     private static void GeneratePropertyWriteForTopLevel(StringBuilder sb, PropertyInfo prop, string valuePrefix)
     {
         var access = $"{valuePrefix}.{prop.Name}";
+
+        // TonlElement: emit pre-rendered bytes directly — no key quoting of the value, no recursion.
+        if (prop.Category == PropertyCategory.TonlElement)
+        {
+            sb.AppendLine("            writer.WriteIndent(1);");
+            sb.AppendLine($"            writer.WriteKeyRawValue(\"{prop.Name}\", {access}.Bytes.Span);");
+            sb.AppendLine("            writer.WriteNewLine();");
+            return;
+        }
 
         // Handle collection and object properties specially - they need multi-line code blocks
         if (prop.Category == PropertyCategory.Collection)
@@ -515,6 +525,15 @@ internal static class CodeGenerator
     {
         var access = $"{valuePrefix}.{prop.Name}";
 
+        // TonlElement: emit pre-rendered bytes directly — no key quoting of the value, no recursion.
+        if (prop.Category == PropertyCategory.TonlElement)
+        {
+            sb.AppendLine("            writer.WriteIndent(2);");
+            sb.AppendLine($"            writer.WriteKeyRawValue(\"{prop.Name}\", {access}.Bytes.Span);");
+            sb.AppendLine("            writer.WriteNewLine();");
+            return;
+        }
+
         // Handle collection and object properties specially - they need multi-line code blocks
         if (prop.Category == PropertyCategory.Collection)
         {
@@ -559,12 +578,16 @@ internal static class CodeGenerator
         // For nested serialization, only handle primitives - complex types fall back to ToString
         switch (prop.Category)
         {
+            case PropertyCategory.TonlElement:
+                // Pre-rendered bytes — emit directly without quoting or escaping the value.
+                sb.AppendLine($"writer.WriteKeyRawValue(\"{prop.Name}\", {access}.Bytes.Span);");
+                break;
             case PropertyCategory.Boolean:
                 sb.AppendLine($"writer.WriteKeyBoolean(\"{prop.Name}\", {access});");
                 break;
             case PropertyCategory.Integer:
                 if (prop.TypeName.Contains("UInt64") || prop.TypeName.Contains("ulong"))
-                    sb.AppendLine($"writer.WriteKeyValue(\"{prop.Name}\", {access}.ToString());");
+                    sb.AppendLine($"writer.WriteKeyUInt64(\"{prop.Name}\", {access});");
                 else if (prop.TypeName.Contains("Int64") || prop.TypeName.Contains("long"))
                     sb.AppendLine($"writer.WriteKeyInt64(\"{prop.Name}\", {access});");
                 else if (prop.TypeName.Contains("UInt32") || prop.TypeName.Contains("uint"))
@@ -846,12 +869,16 @@ internal static class CodeGenerator
         // Write value without key for tabular format
         switch (prop.Category)
         {
+            case PropertyCategory.TonlElement:
+                // Pre-rendered bytes — emit directly without quoting or escaping.
+                sb.AppendLine($"            writer.WriteRawValue({access}.Bytes.Span);");
+                break;
             case PropertyCategory.Boolean:
                 sb.AppendLine($"            writer.WriteBoolean({valueAccess});");
                 break;
             case PropertyCategory.Integer:
                 if (prop.TypeName.Contains("UInt64") || prop.TypeName.Contains("ulong"))
-                    sb.AppendLine($"            writer.WriteStringValue({valueAccess}.ToString());");
+                    sb.AppendLine($"            writer.WriteUInt64({valueAccess});");
                 else if (prop.TypeName.Contains("Int64") || prop.TypeName.Contains("long"))
                     sb.AppendLine($"            writer.WriteInt64({valueAccess});");
                 else if (prop.TypeName.Contains("UInt32") || prop.TypeName.Contains("uint"))
@@ -1373,13 +1400,17 @@ internal static class CodeGenerator
     {
         switch (prop.Category)
         {
+            case PropertyCategory.TonlElement:
+                // Pre-rendered bytes — emit directly without quoting or escaping the value.
+                sb.AppendLine($"writer.WriteKeyRawValue(\"{prop.Name}\", {access}.Bytes.Span);");
+                break;
             case PropertyCategory.Boolean:
                 sb.AppendLine($"writer.WriteKeyBoolean(\"{prop.Name}\", {access});");
                 break;
             case PropertyCategory.Integer:
                 // Handle all integer types appropriately
                 if (prop.TypeName.Contains("UInt64") || prop.TypeName.Contains("ulong"))
-                    sb.AppendLine($"writer.WriteKeyValue(\"{prop.Name}\", {access}.ToString());"); // ulong as string to preserve full range
+                    sb.AppendLine($"writer.WriteKeyUInt64(\"{prop.Name}\", {access});");
                 else if (prop.TypeName.Contains("Int64") || prop.TypeName.Contains("long"))
                     sb.AppendLine($"writer.WriteKeyInt64(\"{prop.Name}\", {access});");
                 else if (prop.TypeName.Contains("UInt32") || prop.TypeName.Contains("uint"))

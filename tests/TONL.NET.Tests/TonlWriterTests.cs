@@ -322,4 +322,107 @@ public class TonlWriterTests
         var result = buffer.ToString();
         Assert.Equal("[2]{\"@id\",\"first-name\"}:", result);
     }
+
+    // -------------------------------------------------------------------------
+    // WriteRawValue / WriteKeyRawValue Tests
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void WriteRawValue_EmitsExactBytes_WithNoQuotingOrEscaping()
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        var raw = "42"u8;
+        writer.WriteRawValue(raw);
+        writer.Flush();
+
+        Assert.Equal("42", buffer.ToString());
+    }
+
+    [Fact]
+    public void WriteRawValue_MultilineFragment_EmittedAsIs()
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        // A fragment that looks like a TONL nested block
+        var raw = "{\n  x: 1\n  y: 2\n}"u8;
+        writer.WriteRawValue(raw);
+        writer.Flush();
+
+        Assert.Equal("{\n  x: 1\n  y: 2\n}", buffer.ToString());
+    }
+
+    [Fact]
+    public void WriteKeyRawValue_EmitsKeyColonSpaceThenRawBytes()
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        var raw = "hello world"u8;
+        writer.WriteKeyRawValue("rows", raw);
+        writer.Flush();
+
+        Assert.Equal("rows: hello world", buffer.ToString());
+    }
+
+    [Fact]
+    public void WriteKeyRawValue_QuotesKeyWhenRequired()
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        var raw = "99"u8;
+        writer.WriteKeyRawValue("@special", raw);
+        writer.Flush();
+
+        Assert.Equal("\"@special\": 99", buffer.ToString());
+    }
+
+    // -------------------------------------------------------------------------
+    // WriteUInt64 / WriteKeyUInt64 Tests
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(0UL, "0")]
+    [InlineData(long.MaxValue, "9223372036854775807")]
+    [InlineData((ulong)long.MaxValue + 1UL, "9223372036854775808")]
+    [InlineData(ulong.MaxValue, "18446744073709551615")]
+    public void WriteUInt64_EmitsBareInteger(ulong value, string expected)
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        writer.WriteUInt64(value);
+        writer.Flush();
+
+        Assert.Equal(expected, buffer.ToString());
+    }
+
+    [Theory]
+    [InlineData(0UL, "count: 0")]
+    [InlineData(ulong.MaxValue, "count: 18446744073709551615")]
+    public void WriteKeyUInt64_EmitsKeyColonSpaceThenBareInteger(ulong value, string expected)
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        writer.WriteKeyUInt64("count", value);
+        writer.Flush();
+
+        Assert.Equal(expected, buffer.ToString());
+    }
+
+    [Fact]
+    public void WriteKeyUInt64_QuotesKeyWhenRequired()
+    {
+        using var buffer = new TonlBufferWriter();
+        var writer = new TonlWriter(buffer);
+
+        writer.WriteKeyUInt64("@count", 42UL);
+        writer.Flush();
+
+        Assert.Equal("\"@count\": 42", buffer.ToString());
+    }
 }
