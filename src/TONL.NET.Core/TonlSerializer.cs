@@ -1038,6 +1038,7 @@ public static class TonlSerializer
                             for (int j = 0; j < Math.Min(fieldCount, arrColumns.Length); j++)
                             {
                                 var fieldSpan = rowTrimmed[fields[j]];
+                                if (IsMissingTabularField(fieldSpan)) continue; // unquoted empty cell = missing field (spec); quoted "" is an empty string
                                 row[arrColumns[j]] = reader.ParsePrimitiveValue(fieldSpan);
                             }
                             rows.Add(row);
@@ -1130,6 +1131,7 @@ public static class TonlSerializer
                                             for (int j = 0; j < Math.Min(nestedFieldCount, nestedArrColumns.Length); j++)
                                             {
                                                 var nestedFieldSpan = nestedRowTrimmed[nestedFields[j]];
+                                                if (IsMissingTabularField(nestedFieldSpan)) continue;
                                                 nestedRow[nestedArrColumns[j]] = reader.ParsePrimitiveValue(nestedFieldSpan);
                                             }
                                             nestedRows.Add(nestedRow);
@@ -1503,6 +1505,22 @@ public static class TonlSerializer
             end--;
         }
         return span.Slice(start, end - start);
+    }
+
+    /// <summary>
+    /// True when a tabular cell is an unquoted empty value (only whitespace), which the
+    /// TONL spec defines as a missing field. A quoted <c>""</c> is an explicit empty string.
+    /// </summary>
+    private static bool IsMissingTabularField(ReadOnlySpan<byte> field)
+    {
+        foreach (var b in field)
+        {
+            if (b != (byte)' ' && b != (byte)'\t' && b != (byte)'\r')
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /// <summary>

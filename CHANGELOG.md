@@ -2,6 +2,27 @@
 
 All notable changes to TONL.NET will be documented in this file.
 
+## [1.2.1] - 2026-11-03
+
+### Fixed
+
+- **Spec compliance: missing fields in tabular rows** — an unquoted empty cell (e.g. `x, , z` or a trailing `x,`) is now treated as a missing field and omitted from the decoded dictionary, per TONL specification "Missing Fields in Tabular Format". Previously the key was added with a `null` value, making missing fields indistinguishable from explicit `null`. Quoted `""` continues to decode as an empty string. Typed deserialization of a missing cell leaves the property default in place (covered by a new test). Mirrors upstream tonl-dev/tonl `865391e`.
+
+### Changed
+
+- Tracked TONL reference implementation (`docs/tonl-spec`) updated from `d084d02` (v2.5.2) to `865391e`.
+- `Microsoft.SourceLink.GitHub` 8.x → 10.x — clears NU1902 (GHSA-23fw-v26w-5fgq in transitive `Microsoft.Build.Tasks.Git` 8.0.0), which was failing restore under warnings-as-errors.
+- Test runner `xunit.runner.visualstudio` 3.x → 4.x.
+- GitHub Actions: `checkout` v7, `setup-dotnet` v6, `cache` v6, `action-gh-release` v3, `stale` v11, `dependabot/fetch-metadata` v3.
+
+### Notes
+
+- Upstream also began quoting integers beyond 2^53 on encode. That is a JavaScript `Number` precision workaround, not a spec rule; TONL.NET continues to emit `long`/`ulong` as bare integers. JS consumers will read such values as strings.
+
+### Tests
+
+- 383 tests (up from 377), including new tabular empty-string / missing-field / null regression tests. AOT: 58/58.
+
 ## [1.2.0] - 2026-05-20
 
 ### Added
