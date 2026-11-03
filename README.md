@@ -4,7 +4,7 @@ A high-performance .NET implementation of [TONL (Token-Optimized Notation Langua
 
 ## Features
 
-- **Full TONL Spec Compliance** - 383 tests passing against the official specification
+- **Full TONL Spec Compliance** - 387 tests passing against the official specification
 - **High Performance** - Competitive deserialization speed with System.Text.Json
 - **Excellent Compression** - Up to 3.2x smaller output than JSON on typical datasets
 - **Zero-Allocation Design** - Ref struct reader/writer for minimal GC pressure

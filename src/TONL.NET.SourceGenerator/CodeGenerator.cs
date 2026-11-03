@@ -180,6 +180,12 @@ internal static class CodeGenerator
 
         sb.AppendLine("        }");
         sb.AppendLine();
+
+        // Absent keys (e.g. a missing tabular cell) read as null instead of throwing.
+        sb.AppendLine("        [MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        sb.AppendLine("        private static object? __TonlGetValue(Dictionary<string, object?> dict, string key)");
+        sb.AppendLine("            => dict.TryGetValue(key, out var value) ? value : null;");
+        sb.AppendLine();
     }
 
     private static void GenerateRecordDeserialization(StringBuilder sb, SerializableTypeInfo typeInfo)
@@ -228,7 +234,7 @@ internal static class CodeGenerator
 
     private static string GetDeserializeConversion(PropertyInfo prop, int index)
     {
-        var dictAccess = $"dict[\"{prop.Name}\"]";
+        var dictAccess = $"__TonlGetValue(dict, \"{prop.Name}\")";
         var baseType = prop.TypeName.TrimEnd('?');
 
         // Special case for char - categorized as String but needs extraction
@@ -251,7 +257,7 @@ internal static class CodeGenerator
             PropertyCategory.Guid => GetGuidConversion(dictAccess, prop.IsNullable, index),
             PropertyCategory.TimeSpan => GetTimeSpanConversion(dictAccess, prop.IsNullable, index),
             PropertyCategory.Enum => GetEnumConversion(dictAccess, baseType, prop.IsNullable, index),
-            _ => $"({prop.TypeName}){dictAccess}"
+            _ => prop.IsNullable ? $"({prop.TypeName}){dictAccess}" : $"({prop.TypeName}){dictAccess}!"
         };
     }
 
@@ -259,7 +265,7 @@ internal static class CodeGenerator
     {
         if (isNullable)
             return $"{dictAccess} is {typeName} v{index} ? v{index} : null";
-        return $"({typeName}){dictAccess}!";
+        return $"{dictAccess} is {{}} o{index} ? ({typeName})o{index} : default";
     }
 
     private static string GetNumericConversion(string dictAccess, string typeName, bool isNullable, int index)
