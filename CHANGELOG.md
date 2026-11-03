@@ -2,6 +2,17 @@
 
 All notable changes to TONL.NET will be documented in this file.
 
+## [1.2.2] - 2026-11-03
+
+### Fixed
+
+- **Source generator: absent keys in generated `Deserialize(Dictionary<string, object?>)`** — generated deserializers indexed `dict["Prop"]` directly and threw `KeyNotFoundException` when a key was absent. Since 1.2.1 omits missing tabular cells from decoded dictionaries, this made rows with missing cells crash when passed to a generated `XTonlSerializer.Deserialize`. Absent keys now read as `null`, and non-nullable `bool`/`decimal`/value-type parameters fall back to `default` instead of throwing `NullReferenceException` on unboxing.
+- **Source generator: nullable warnings in generated code** — record/POCO members of collection, dictionary or nested-object type no longer emit CS8600/CS8604 in consumer builds with nullable enabled (14 warnings in the AOT test project → 0).
+
+### Tests
+
+- 387 tests (up from 383). AOT: 58/58.
+
 ## [1.2.1] - 2026-11-03
 
 ### Fixed
